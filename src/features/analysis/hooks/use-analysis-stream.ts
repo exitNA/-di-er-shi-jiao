@@ -102,6 +102,7 @@ export function useAnalysisStream(
     let polling = false;
     let source: EventSource | undefined;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
     const poll = () => {
@@ -113,6 +114,14 @@ export function useAnalysisStream(
         if (!active || !polling) return;
         poll();
       }, pollingDelay);
+    };
+
+    const refreshWhileActive = () => {
+      refreshTimer = setTimeout(async () => {
+        if (!active) return;
+        const next = await fetchSnapshot().catch(() => null);
+        if (active && (!next || shouldUseNetwork(next))) refreshWhileActive();
+      }, 1000);
     };
 
     const connect = () => {
@@ -127,6 +136,7 @@ export function useAnalysisStream(
         polling = false;
         if (pollTimer) clearTimeout(pollTimer);
         setConnectionState("connected");
+        void fetchSnapshot().catch(() => undefined);
       };
       source.addEventListener("changed", (event) => {
         if (!active) return;
@@ -156,10 +166,12 @@ export function useAnalysisStream(
     };
 
     connect();
+    refreshWhileActive();
     return () => {
       active = false;
       source?.close();
       if (pollTimer) clearTimeout(pollTimer);
+      if (refreshTimer) clearTimeout(refreshTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [fetchSnapshot, jobId, networkActive]);

@@ -17,7 +17,7 @@ test("renders modules progressively and restores them after reload", async ({
   await expect(page).toHaveURL(/\/analysis\/[^/]+$/);
   await expect(page.getByRole("heading", { name: "论证骨架" })).toBeVisible();
   await expect(page.getByText("论证骨架已完成")).toBeVisible();
-  await expect(page.getByText("信源对照分析中")).toBeVisible();
+  await expect(page.getByText(/信源对照(分析中|已完成)/)).toBeVisible();
   await page.reload();
   await expect(page.getByText("论证骨架已完成")).toBeVisible();
   await expect(page.getByText("认知体检已完成")).toBeVisible();
