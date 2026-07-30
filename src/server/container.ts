@@ -9,7 +9,13 @@ import {
   type SubmitAnalysisInput,
   type SubmitAnalysisResult,
 } from "@/features/analysis/server/submit-analysis";
-import { QueuedAnalysisDispatcher } from "@/server/adapters/tasks/queued-analysis-dispatcher";
+import { OpenAICompatibleGenerator } from "@/server/adapters/ai/openai-compatible-generator";
+import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
+import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
+import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
+import { AiExpertSuite } from "@/server/agents/ai-expert-suite";
+import { BaselineOrchestrator } from "@/server/agents/baseline-orchestrator";
+import { FakeExpertSuite } from "@/server/agents/fake-expert-suite";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
 
@@ -18,6 +24,7 @@ export type ApplicationContainer = {
   authService: AuthService;
   analysisRepository: AnalysisRepository;
   analysisDispatcher: AnalysisDispatcher;
+  baselineOrchestrator: BaselineOrchestrator;
   submitAnalysis(input: SubmitAnalysisInput): Promise<SubmitAnalysisResult>;
 };
 
@@ -28,7 +35,29 @@ export function getContainer(): ApplicationContainer {
     const env = loadServerEnv();
     const db = createDb(env.DATABASE_URL);
     const analysisRepository = new PostgresAnalysisRepository(db);
-    const analysisDispatcher = new QueuedAnalysisDispatcher();
+    const now = () => new Date();
+    const experts =
+      env.AGENT_ADAPTER === "fake"
+        ? new FakeExpertSuite()
+        : new AiExpertSuite({
+            generator: new OpenAICompatibleGenerator({
+              baseURL: env.LLM_BASE_URL!,
+              apiKey: env.LLM_API_KEY!,
+              modelId: env.LLM_MODEL_ID!,
+            }),
+            searchClient: new TavilySearchClient({
+              apiKey: env.TAVILY_API_KEY!,
+            }),
+          });
+    const baselineOrchestrator = new BaselineOrchestrator(
+      experts,
+      analysisRepository,
+      now,
+    );
+    const analysisDispatcher =
+      env.ANALYSIS_RUNTIME === "in-process"
+        ? new InProcessAnalysisDispatcher(baselineOrchestrator)
+        : new TriggerAnalysisDispatcher();
     container = {
       db,
       authService: new AuthService(
@@ -38,7 +67,9 @@ export function getContainer(): ApplicationContainer {
       ),
       analysisRepository,
       analysisDispatcher,
-      submitAnalysis: (input) => submitAnalysis(input, analysisRepository, analysisDispatcher),
+      baselineOrchestrator,
+      submitAnalysis: (input) =>
+        submitAnalysis(input, analysisRepository, analysisDispatcher, now),
     };
   }
   return container;
