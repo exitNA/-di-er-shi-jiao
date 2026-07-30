@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   argumentModuleSchema,
+  baselineDraftSchema,
   externalSourceSchema,
   risksModuleSchema,
   sourcesModuleSchema,
@@ -13,6 +14,37 @@ const sourceMaterialStatement = {
   origin: "source_material" as const,
   sourceMaterialQuote: "原始材料中的事实",
   confidence: { score: 1, rationale: "直接引用原始材料" },
+};
+
+const baselineDraft = {
+  overview: {
+    coreClaims: [],
+    mainDisputes: [],
+    topRisks: [],
+    keyUnknowns: [],
+    safetyNotice: null,
+  },
+  argument: {
+    factualOnly: true,
+    claims: [],
+    evidence: [],
+    assumptions: [],
+    reasoningSteps: [],
+    conclusions: [],
+    gaps: [],
+    factualStatements: [],
+  },
+  perspectives: {
+    supporting: [],
+    opposing: [],
+    stakeholders: [],
+    disputes: [],
+    unknowns: [],
+    changeEvidence: [],
+  },
+  sources: { claims: [], sources: [], relations: [], gaps: [] },
+  risks: { items: [] },
+  reflection: { question: "还需要核实什么？", whyItMatters: "影响结论可靠性。" },
 };
 
 describe("analysis report contracts", () => {
@@ -51,6 +83,12 @@ describe("analysis report contracts", () => {
         factualStatements: [sourceMaterialStatement],
       }),
     ).toBeTruthy();
+  });
+
+  it("rejects a baseline draft with an unknown module", () => {
+    expect(() =>
+      baselineDraftSchema.parse({ ...baselineDraft, unreviewed: { content: "未知模块" } }),
+    ).toThrow();
   });
 
   it("requires complete external-source metadata", () => {

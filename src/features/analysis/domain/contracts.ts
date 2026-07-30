@@ -132,7 +132,7 @@ export const baselineDraftSchema = z.object({
   sources: sourcesModuleSchema,
   risks: risksModuleSchema,
   reflection: reflectionModuleSchema,
-});
+}).strict();
 
 export type TraceableStatement = z.infer<typeof traceableStatementSchema>;
 export type ExternalSource = z.infer<typeof externalSourceSchema>;
