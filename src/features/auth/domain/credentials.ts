@@ -7,7 +7,7 @@ export const usernameSchema = z
   .max(32)
   .regex(/^[A-Za-z0-9_]+$/);
 
-export const passwordSchema = z.string().min(12).max(128);
+export const passwordSchema = z.string().min(6).max(128);
 
 export const registrationSchema = z.object({
   username: usernameSchema,

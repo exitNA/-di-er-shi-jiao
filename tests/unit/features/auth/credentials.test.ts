@@ -15,12 +15,18 @@ describe("credentials", () => {
     ).toThrow();
   });
 
-  it("accepts unicode and spaces in a 12-character password", () => {
+  it("accepts a 6-character password and rejects a shorter password", () => {
     expect(
       registrationSchema.parse({
         username: "reader_1",
-        password: "复杂 密码 123456",
+        password: "密码12ab",
       }),
     ).toBeTruthy();
+    expect(() =>
+      registrationSchema.parse({
+        username: "reader_1",
+        password: "密码12a",
+      }),
+    ).toThrow();
   });
 });
