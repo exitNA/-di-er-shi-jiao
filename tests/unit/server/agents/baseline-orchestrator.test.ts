@@ -109,7 +109,12 @@ describe("BaselineOrchestrator", () => {
     repo.runs.length = 0;
     await new BaselineOrchestrator(suite, repo).run({ jobId: "job-1" });
 
-    expect(repo.runs.filter((run) => run.phase === "baseline").map((run) => run.expertType)).toEqual(["risks"]);
+    expect(repo.runs.map((run) => `${run.expertType}:${run.phase}`)).toEqual([
+      "perspectives:baseline",
+      "synthesis:baseline",
+      "perspectives:second-review",
+      "synthesis:revision",
+    ]);
     for (const [moduleType, version] of Object.entries(completedVersions)) {
       expect(repo.modules[moduleType as keyof typeof repo.modules].version).toBe(version);
     }
