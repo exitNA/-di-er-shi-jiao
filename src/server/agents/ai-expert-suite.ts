@@ -217,7 +217,7 @@ function constrainSources(value: SourcesModule, candidates: SourceCandidate[]): 
     if (sources.some((source) => source.id === candidate.id)) continue;
     sources.push(toExternalSource(candidate));
   }
-  const gaps = sources.length > 2 ? value.gaps : [evidenceGap()];
+  const gaps = sources.length > 2 ? value.gaps.filter(isActionableEvidenceGap) : [evidenceGap()];
   return { ...value, sources, relations, gaps };
 }
 
@@ -232,6 +232,10 @@ function toExternalSource(candidate: SourceCandidate): ExternalSource {
     qualityTier: candidate.qualityTier,
     excerpt: candidate.content.slice(0, 2_000) || candidate.title,
   };
+}
+
+function isActionableEvidenceGap(gap: SourcesModule["gaps"][number]): boolean {
+  return /不足|缺乏|未知/.test(gap.text) && /获取|查找|补充|核对/.test(gap.text);
 }
 
 function evidenceGap(): SourcesModule["gaps"][number] {
