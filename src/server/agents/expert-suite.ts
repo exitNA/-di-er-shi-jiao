@@ -31,7 +31,7 @@ export type DraftReview = {
 
 export type DraftReviewInput = ExpertInput & { draft: BaselineDraft };
 
-export type DraftRevisionInput = ExpertInput & {
+export type DraftRevisionInput = ExpertInput & ExpertOutputs & {
   draft: BaselineDraft;
   findings: DraftReview["findings"];
 };

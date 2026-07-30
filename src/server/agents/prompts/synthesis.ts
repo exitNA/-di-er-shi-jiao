@@ -5,5 +5,5 @@ export const synthesisSystemInstruction = systemInstruction(
 );
 
 export function synthesisPrompt(material: string, outputs: unknown): string {
-  return `${sourceMaterial(material)}\n\n<expert_outputs>${JSON.stringify(outputs)}</expert_outputs>`;
+  return `${sourceMaterial(material)}\n\n${sourceMaterial(JSON.stringify(outputs))}`;
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getDomain } from "tldts";
 import {
   argumentModuleSchema,
   baselineDraftSchema,
@@ -23,9 +24,10 @@ import type {
   SynthesisInput,
 } from "./expert-suite";
 import { argumentPrompt, argumentSystemInstruction } from "./prompts/argument";
+import { sourceMaterial } from "./prompts/common";
 import { draftReviewPrompt, perspectivesPrompt, perspectivesSystemInstruction } from "./prompts/perspectives";
 import { risksPrompt, risksSystemInstruction } from "./prompts/risks";
-import { sourcesPrompt, sourcesSystemInstruction, type SourceCandidatePrompt } from "./prompts/sources";
+import { sourcesPrompt, sourcesSystemInstruction } from "./prompts/sources";
 import { synthesisPrompt, synthesisSystemInstruction } from "./prompts/synthesis";
 
 const draftReviewSchema = z.object({
@@ -131,7 +133,12 @@ export class AiExpertSuite implements ExpertSuite {
     return this.dependencies.generator.generate({
       operation: "draft-revision",
       system: synthesisSystemInstruction,
-      prompt: `${synthesisPrompt(input.material, input.draft)}\n\n<review_findings>${JSON.stringify(input.findings)}</review_findings>\n\n请按发现修订全部六个模块。`,
+      prompt: `${synthesisPrompt(input.material, {
+        argument: input.argument,
+        perspectives: input.perspectives,
+        sources: input.sources,
+        risks: input.risks,
+      })}\n\n${sourceMaterial(JSON.stringify(input.draft))}\n\n${sourceMaterial(JSON.stringify(input.findings))}\n\n请按发现修订全部六个模块。`,
       schema: baselineDraftSchema,
       abortSignal: input.abortSignal,
     });
@@ -205,8 +212,30 @@ function constrainSources(value: SourcesModule, candidates: SourceCandidate[]): 
   const relations = value.relations
     .map((relation) => ({ ...relation, sourceId: sourceIdMap.get(relation.sourceId) ?? relation.sourceId }))
     .filter((relation) => sourceIds.has(relation.sourceId));
-  const gaps = value.gaps.length || sources.length > 2 ? value.gaps : [evidenceGap()];
-  return { ...value, sources, relations, gaps };
+  for (const candidate of candidates) {
+    if (sources.length >= 3) break;
+    if (sources.some((source) => source.id === candidate.id)) continue;
+    sources.push(toExternalSource(candidate));
+  }
+  const gaps = sources.length > 2 ? value.gaps : value.gaps.filter(isActionableEvidenceGap);
+  return { ...value, sources, relations, gaps: gaps.length || sources.length > 2 ? gaps : [evidenceGap()] };
+}
+
+function toExternalSource(candidate: SourceCandidate): ExternalSource {
+  return {
+    id: candidate.id,
+    title: candidate.title,
+    url: candidate.canonicalUrl,
+    domain: candidate.domain,
+    publisher: candidate.domain,
+    publishedAt: candidate.publishedAt ?? null,
+    qualityTier: candidate.qualityTier,
+    excerpt: candidate.content.slice(0, 2_000) || candidate.title,
+  };
+}
+
+function isActionableEvidenceGap(gap: SourcesModule["gaps"][number]): boolean {
+  return /不足|缺乏|未知/.test(gap.text) && /获取|查找|补充|核对/.test(gap.text);
 }
 
 function evidenceGap(): SourcesModule["gaps"][number] {
@@ -233,11 +262,7 @@ function canonicalizeUrl(value: string): string | undefined {
 }
 
 function registrableDomain(hostname: string): string {
-  const labels = hostname.toLowerCase().split(".");
-  const publicSuffix = labels.slice(-2).join(".");
-  return new Set(["co.uk", "org.uk", "gov.uk", "com.cn", "net.cn", "org.cn", "gov.cn"]).has(publicSuffix)
-    ? labels.slice(-3).join(".")
-    : publicSuffix;
+  return getDomain(hostname, { allowPrivateDomains: true }) ?? hostname.toLowerCase();
 }
 
 function sourceTier(domain: string): number {

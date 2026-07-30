@@ -21,6 +21,10 @@ describe("FakeExpertSuite", () => {
     });
     const revised = await suite.reviseDraft({
       material,
+      argument: argument.value,
+      perspectives: perspectives.value,
+      sources: sources.value,
+      risks: risks.value,
       draft: { ...synthesis.value, argument: argument.value, perspectives: perspectives.value, sources: sources.value, risks: risks.value },
       findings: [],
     });
@@ -39,5 +43,25 @@ describe("FakeExpertSuite", () => {
     await vi.advanceTimersByTimeAsync(50);
     await expect(pending).rejects.toMatchObject({ code: "SEARCH_UNAVAILABLE" });
     vi.useRealTimers();
+  });
+
+  it("fails the source marker once and then recovers", async () => {
+    const suite = new FakeExpertSuite({ delaysMs: { sources: 0 } });
+    const input = { material: "[测试：信源失败一次]可追溯事实。" };
+
+    await expect(suite.researchSources(input)).rejects.toMatchObject({ code: "SEARCH_UNAVAILABLE" });
+    await expect(suite.researchSources(input)).resolves.toMatchObject({ value: { sources: [] } });
+  });
+
+  it("emits one interruption signal and does not retain failures for recovery", async () => {
+    const suite = new FakeExpertSuite({ delaysMs: { argument: 0, perspectives: 0, risks: 0, sources: 0 } });
+    const input = { material: "[测试：任务中断]可追溯事实。" };
+
+    await suite.analyzeArgument(input);
+    await expect(suite.mapPerspectives(input)).rejects.toMatchObject({ code: "TASK_INTERRUPTED" });
+    await expect(suite.reviewRisks(input)).resolves.toBeTruthy();
+    await expect(suite.researchSources(input)).resolves.toBeTruthy();
+    await suite.analyzeArgument(input);
+    await expect(suite.mapPerspectives(input)).resolves.toBeTruthy();
   });
 });

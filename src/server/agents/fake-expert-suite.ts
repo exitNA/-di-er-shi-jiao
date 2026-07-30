@@ -38,7 +38,8 @@ const fakeUsage = { inputTokens: 0, outputTokens: 0, latencyMs: 0 };
 export class FakeExpertSuite implements ExpertSuite {
   private readonly delays: Record<ExpertName, number>;
   private readonly sourceAttempts = new Map<string, number>();
-  private readonly interruptions = new Map<string, { remaining: number }>();
+  private readonly armedInterruptions = new Set<string>();
+  private readonly consumedInterruptions = new Set<string>();
 
   constructor(private readonly options: FakeExpertSuiteOptions = {}) {
     this.delays = { ...defaultDelays, ...options.delaysMs };
@@ -138,12 +139,11 @@ export class FakeExpertSuite implements ExpertSuite {
       if (attempts === 0) throw codedError("SEARCH_UNAVAILABLE");
     }
     if (process.env.NODE_ENV !== "production" && input.material.startsWith("[测试：任务中断]")) {
-      if (expert === "argument" && !this.interruptions.has(input.material)) {
-        this.interruptions.set(input.material, { remaining: 3 });
+      if (expert === "argument" && !this.consumedInterruptions.has(input.material)) {
+        this.armedInterruptions.add(input.material);
       }
-      const interruption = this.interruptions.get(input.material);
-      if (expert !== "argument" && interruption && interruption.remaining > 0) {
-        interruption.remaining -= 1;
+      if (expert === "perspectives" && this.armedInterruptions.delete(input.material)) {
+        this.consumedInterruptions.add(input.material);
         throw codedError("TASK_INTERRUPTED");
       }
     }

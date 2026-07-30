@@ -9,5 +9,5 @@ export function perspectivesPrompt(material: string): string {
 }
 
 export function draftReviewPrompt(material: string, draft: unknown): string {
-  return `${sourceMaterial(material)}\n\n<draft>${JSON.stringify(draft)}</draft>\n\n请审查草稿并只返回需要修改的发现。`;
+  return `${sourceMaterial(material)}\n\n${sourceMaterial(JSON.stringify(draft))}\n\n请审查草稿并只返回需要修改的发现。`;
 }
