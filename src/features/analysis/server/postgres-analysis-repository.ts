@@ -7,6 +7,7 @@ import type {
 } from "@/features/analysis/domain/contracts";
 import { moduleTypes } from "@/features/analysis/domain/contracts";
 import type { AppDb } from "@/server/db/client";
+import { isPostgresUniqueViolation } from "@/server/db/postgres-errors";
 import {
   analysisEvents,
   analysisJobs,
@@ -27,10 +28,6 @@ import type {
   SaveModule,
   StartExpertRun,
 } from "./analysis-repository";
-
-function isUniqueViolation(error: unknown): error is { code: string } {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
-}
 
 function asJobStatus(status: string): AnalysisJobStatus {
   return status as AnalysisJobStatus;
@@ -87,7 +84,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       });
       return { jobId: input.jobId, created: true };
     } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+      if (!isPostgresUniqueViolation(error)) throw error;
 
       const [existing] = await this.db
         .select({ jobId: analysisJobs.id })

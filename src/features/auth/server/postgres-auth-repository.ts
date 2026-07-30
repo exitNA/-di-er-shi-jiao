@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import type { AppDb } from "@/server/db/client";
+import { isPostgresUniqueViolation } from "@/server/db/postgres-errors";
 import {
   authRateLimits,
   passwordCredentials,
@@ -13,10 +14,6 @@ import type {
 } from "./auth-repository";
 
 const sessionTouchIntervalMs = 5 * 60 * 1000;
-
-function isUniqueViolation(error: unknown): error is { code: string } {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
-}
 
 export class PostgresAuthRepository implements AuthRepository {
   constructor(private readonly db: AppDb) {}
@@ -49,7 +46,7 @@ export class PostgresAuthRepository implements AuthRepository {
         return user;
       });
     } catch (error) {
-      if (isUniqueViolation(error)) return null;
+      if (isPostgresUniqueViolation(error)) return null;
       throw error;
     }
   }
