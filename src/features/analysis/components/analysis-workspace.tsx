@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 import { ArgumentModule } from "./argument-module";
 import { OverviewModule } from "./overview-module";
@@ -9,14 +10,15 @@ import { ReflectionModule } from "./reflection-module";
 import { ReportModule } from "./report-module";
 import { RisksModule } from "./risks-module";
 import { SourcesModule } from "./sources-module";
-import type {
-  AnalysisSnapshot,
-  ArgumentModule as ArgumentModuleData,
-  OverviewModule as OverviewModuleData,
-  PerspectivesModule as PerspectivesModuleData,
-  ReflectionModule as ReflectionModuleData,
-  RisksModule as RisksModuleData,
-  SourcesModule as SourcesModuleData,
+import {
+  moduleTypes,
+  type AnalysisSnapshot,
+  type ArgumentModule as ArgumentModuleData,
+  type OverviewModule as OverviewModuleData,
+  type PerspectivesModule as PerspectivesModuleData,
+  type ReflectionModule as ReflectionModuleData,
+  type RisksModule as RisksModuleData,
+  type SourcesModule as SourcesModuleData,
 } from "@/features/analysis/domain/contracts";
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 
@@ -35,6 +37,27 @@ export function AnalysisWorkspace({
   const completed = Object.values(snapshot.modules).filter(
     (module) => module.status === "completed",
   ).length;
+  const firstModuleEventJobId = useRef<string | null>(null);
+  useEffect(() => {
+    const moduleType = moduleTypes.find(
+      (candidate) => snapshot.modules[candidate].status === "completed",
+    );
+    if (!moduleType || firstModuleEventJobId.current === snapshot.jobId) return;
+    firstModuleEventJobId.current = snapshot.jobId;
+    void fetch(
+      "/api/product-events",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventName: "first_module_shown",
+          jobId: snapshot.jobId,
+          moduleType,
+        }),
+        keepalive: true,
+      },
+    ).catch(() => {});
+  }, [snapshot.jobId, snapshot.modules]);
   const progressText =
     snapshot.status === "completed"
       ? "认知体检已完成"

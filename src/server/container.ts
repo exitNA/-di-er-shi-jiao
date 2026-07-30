@@ -18,6 +18,7 @@ import { BaselineOrchestrator } from "@/server/agents/baseline-orchestrator";
 import { FakeExpertSuite } from "@/server/agents/fake-expert-suite";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
+import { recordProductEvent } from "./observability/product-events";
 
 export type ApplicationContainer = {
   db: AppDb;
@@ -36,6 +37,9 @@ export function getContainer(): ApplicationContainer {
     const db = createDb(env.DATABASE_URL);
     const analysisRepository = new PostgresAnalysisRepository(db);
     const now = () => new Date();
+    const productEventRecorder = (
+      input: Parameters<typeof recordProductEvent>[1],
+    ) => recordProductEvent(db, input);
     const experts =
       env.AGENT_ADAPTER === "fake"
         ? new FakeExpertSuite()
@@ -53,6 +57,7 @@ export function getContainer(): ApplicationContainer {
       experts,
       analysisRepository,
       now,
+      productEventRecorder,
     );
     const analysisDispatcher =
       env.ANALYSIS_RUNTIME === "in-process"
@@ -69,7 +74,13 @@ export function getContainer(): ApplicationContainer {
       analysisDispatcher,
       baselineOrchestrator,
       submitAnalysis: (input) =>
-        submitAnalysis(input, analysisRepository, analysisDispatcher, now),
+        submitAnalysis(
+          input,
+          analysisRepository,
+          analysisDispatcher,
+          now,
+          productEventRecorder,
+        ),
     };
   }
   return container;

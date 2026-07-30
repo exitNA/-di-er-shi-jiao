@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { logError } from "@/server/observability/logger";
+import type { ProductEventRecorder } from "@/server/observability/product-events";
 import type { AnalysisDispatcher } from "./analysis-dispatcher";
 import type { AnalysisRepository } from "./analysis-repository";
 
@@ -19,6 +21,7 @@ export async function submitAnalysis(
   repository: AnalysisRepository,
   dispatcher: AnalysisDispatcher,
   now: () => Date = () => new Date(),
+  recordProductEvent: ProductEventRecorder = async () => false,
 ): Promise<SubmitAnalysisResult> {
   if (!input.content.trim()) return { ok: false, code: "EMPTY" };
   if (input.content.length > maxContentLength) return { ok: false, code: "TOO_LONG" };
@@ -38,6 +41,21 @@ export async function submitAnalysis(
   });
 
   if (created.created) {
+    try {
+      await recordProductEvent({
+        eventName: "analysis_submitted",
+        jobId: created.jobId,
+        userId: input.userId,
+        now: now(),
+      });
+    } catch {
+      logError({
+        operation: "product_event.record",
+        jobId: created.jobId,
+        errorCode: "PRODUCT_EVENT_FAILED",
+      });
+    }
+
     try {
       await dispatcher.enqueue({ jobId: created.jobId, dispatchKey: `${created.jobId}:baseline` });
     } catch {

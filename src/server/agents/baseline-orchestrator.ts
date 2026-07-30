@@ -11,6 +11,16 @@ import {
 } from "@/features/analysis/domain/contracts";
 import type { AnalysisRepository, ExecutionJob } from "@/features/analysis/server/analysis-repository";
 import type { GenerationUsage } from "@/server/ai/structured-generator";
+import {
+  calculateTokenCostUsd,
+  formatTokenCostUsd,
+} from "@/server/observability/cost";
+import { logError, logInfo } from "@/server/observability/logger";
+import {
+  type ProductEventInput,
+  type ProductEventRecorder,
+} from "@/server/observability/product-events";
+import { withSpan } from "@/server/observability/tracing";
 import type { ExpertResult, ExpertSuite } from "./expert-suite";
 
 type IndependentModule = "argument" | "perspectives" | "sources" | "risks";
@@ -38,9 +48,16 @@ export class BaselineOrchestrator {
     private readonly experts: ExpertSuite,
     private readonly repository: AnalysisRepository,
     private readonly now: () => Date = () => new Date(),
+    private readonly productEventRecorder: ProductEventRecorder = async () => false,
   ) {}
 
   async run(input: { jobId: string; onlyModule?: ReportModuleType }): Promise<RunSummary> {
+    return withSpan("analysis.job", { jobId: input.jobId }, () =>
+      this.runJob(input),
+    );
+  }
+
+  private async runJob(input: { jobId: string; onlyModule?: ReportModuleType }): Promise<RunSummary> {
     if (input.onlyModule === "overview" || input.onlyModule === "reflection") {
       throw new Error("Overview and reflection are regenerated from expert outputs");
     }
@@ -173,6 +190,24 @@ export class BaselineOrchestrator {
         jobId: job.jobId, userId: job.userId, eventType: sourceError ? "report.degraded" : "baseline.completed",
         payload: sourceError ? { moduleType: "sources", errorCode: sourceError } : { state: "completed" }, now: this.now(),
       });
+      await this.recordProductEventSafely(
+        sourceError
+          ? {
+              eventName: "report_degraded",
+              jobId: job.jobId,
+              userId: job.userId,
+              moduleType: "sources",
+              moduleVersion: snapshot.modules.sources.version,
+              errorCode: sourceError,
+              now: this.now(),
+            }
+          : {
+              eventName: "baseline_report_completed",
+              jobId: job.jobId,
+              userId: job.userId,
+              now: this.now(),
+            },
+      );
       return { status };
     } catch (error) {
       return this.recover(job, errorCode(error));
@@ -189,26 +224,102 @@ export class BaselineOrchestrator {
   ): Promise<ExpertSuccess<T> | ExpertFailure> {
     const id = randomUUID();
     const started = Date.now();
+    const attributes = {
+      jobId: job.jobId,
+      expertType,
+      phase,
+      attempt,
+    };
     await this.repository.startExpertRun({ id, jobId: job.jobId, expertType, phase, attempt, configVersion: job.configVersion, now: this.now() });
     try {
-      const result = await withTimeout(timeoutMs, run);
-      await this.finishRun(id, "completed", result.usage, Date.now() - started);
+      const result = await withSpan("analysis.expert", attributes, () =>
+        this.runExpertOperation(
+          expertType,
+          phase,
+          attributes,
+          timeoutMs,
+          run,
+        ),
+      );
+      const durationMs = Date.now() - started;
+      await this.finishRun(id, "completed", result.usage, durationMs);
+      logInfo({
+        jobId: job.jobId,
+        operation: `${expertType}.${phase}`,
+        durationMs,
+        attempt,
+      });
       return { ok: true, value: result.value };
     } catch (error) {
       const code = errorCode(error);
-      await this.finishRun(id, "failed", undefined, Date.now() - started, code);
+      const durationMs = Date.now() - started;
+      await this.finishRun(id, "failed", undefined, durationMs, code);
+      logError({
+        jobId: job.jobId,
+        operation: `${expertType}.${phase}`,
+        errorCode: code,
+        durationMs,
+        attempt,
+      });
       return { ok: false, errorCode: code };
     }
   }
 
+  private runExpertOperation<T>(
+    expertType: "argument" | "sources" | "perspectives" | "risks" | "synthesis",
+    phase: "baseline" | "second-review" | "revision",
+    attributes: Record<string, string | number>,
+    timeoutMs: number,
+    run: (abortSignal: AbortSignal) => Promise<ExpertResult<T>>,
+  ): Promise<ExpertResult<T>> {
+    const generate = () =>
+      withSpan("llm.generate", attributes, () => withTimeout(timeoutMs, run));
+    const externalOperation =
+      expertType === "sources" && phase === "baseline"
+        ? () => withSpan("search.request", attributes, generate)
+        : generate;
+    const workflowSpan =
+      phase === "second-review"
+        ? "analysis.review"
+        : expertType === "synthesis"
+          ? "analysis.synthesis"
+          : null;
+    return workflowSpan
+      ? withSpan(workflowSpan, attributes, externalOperation)
+      : externalOperation();
+  }
+
   private finishRun(id: string, status: "completed" | "failed", usage: GenerationUsage | undefined, latencyMs: number, errorCode?: string) {
-    return this.repository.finishExpertRun({ id, status, inputTokens: usage?.inputTokens ?? 0, outputTokens: usage?.outputTokens ?? 0, estimatedCostUsd: "0", latencyMs: usage?.latencyMs ?? latencyMs, errorCode, now: this.now() });
+    const inputTokens = usage?.inputTokens ?? 0;
+    const outputTokens = usage?.outputTokens ?? 0;
+    const cost = calculateTokenCostUsd(inputTokens, outputTokens, {
+      inputUsdPerMillion: environmentPrice("LLM_INPUT_USD_PER_MILLION"),
+      outputUsdPerMillion: environmentPrice("LLM_OUTPUT_USD_PER_MILLION"),
+    });
+    return this.repository.finishExpertRun({ id, status, inputTokens, outputTokens, estimatedCostUsd: formatTokenCostUsd(cost), latencyMs: usage?.latencyMs ?? latencyMs, errorCode, now: this.now() });
   }
 
   private async recover(job: ExecutionJob, failureCode: string): Promise<RunSummary> {
     await this.repository.transitionJob(job.jobId, ["running"], "recoverable", { failureCode, now: this.now() });
     await this.repository.appendEvent({ jobId: job.jobId, userId: job.userId, eventType: "job.recoverable", payload: { errorCode: failureCode }, now: this.now() });
+    logError({
+      jobId: job.jobId,
+      operation: "analysis.job",
+      errorCode: failureCode,
+    });
     return { status: "recoverable" };
+  }
+
+  private async recordProductEventSafely(input: ProductEventInput): Promise<void> {
+    try {
+      await this.productEventRecorder(input);
+    } catch {
+      logError({
+        operation: "product_event.record",
+        jobId: input.jobId,
+        errorCode: "PRODUCT_EVENT_FAILED",
+      });
+    }
   }
 
   private snapshot(job: ExecutionJob) {
@@ -235,6 +346,13 @@ function errorCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
   if (error instanceof Error && error.name === "ZodError") return "INVALID_EXPERT_OUTPUT";
   return "EXPERT_FAILED";
+}
+
+function environmentPrice(
+  name: "LLM_INPUT_USD_PER_MILLION" | "LLM_OUTPUT_USD_PER_MILLION",
+): number {
+  const value = Number(process.env[name] ?? 0);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 function withTimeout<T>(milliseconds: number, run: (abortSignal: AbortSignal) => Promise<T>): Promise<T> {
