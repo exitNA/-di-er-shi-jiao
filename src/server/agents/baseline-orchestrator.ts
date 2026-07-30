@@ -148,7 +148,7 @@ export class BaselineOrchestrator {
       expectedVersion: runningVersion, nextVersion: runningVersion + 1, now: this.now(),
     });
     if (moduleType === "sources") await this.repository.replaceSources(job.reportId, (payload as BaselineDraft["sources"]).sources);
-    return { ok: true, moduleType, payload };
+    return { ok: true, moduleType, value: payload };
   }
 
   private async publish(
@@ -191,10 +191,10 @@ export class BaselineOrchestrator {
       ]);
       for (const moduleType of modulesToPublish) {
         if (moduleType === "sources" && sourceError) continue;
-        const module = snapshot.modules[moduleType];
+        const currentModule = snapshot.modules[moduleType];
         await this.repository.saveModule({
           jobId: job.jobId, reportId: job.reportId, userId: job.userId, moduleType, status: "completed", payload: finalDraft[moduleType],
-          expectedVersion: module.version, nextVersion: module.version + 1, now: this.now(),
+          expectedVersion: currentModule.version, nextVersion: currentModule.version + 1, now: this.now(),
         });
       }
       if (!sourceError) await this.repository.replaceSources(job.reportId, finalDraft.sources.sources);

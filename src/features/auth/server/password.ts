@@ -1,7 +1,8 @@
-import { Algorithm, hash, verify } from "@node-rs/argon2";
+import { hash, verify } from "@node-rs/argon2";
 
 const options = {
-  algorithm: Algorithm.Argon2id,
+  // @node-rs/argon2 declares Algorithm as an ambient const enum; Argon2id is 2.
+  algorithm: 2,
   memoryCost: 19_456,
   timeCost: 2,
   parallelism: 1,

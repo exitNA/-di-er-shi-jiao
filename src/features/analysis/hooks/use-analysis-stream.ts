@@ -40,6 +40,7 @@ export function useAnalysisStream(
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a new job needs its server snapshot before subscribing.
     setSnapshot(initialSnapshot);
     lastCursor.current = initialSnapshot.lastEventId;
   }, [jobId, initialSnapshot]);
@@ -92,6 +93,7 @@ export function useAnalysisStream(
   const networkActive = shouldUseNetwork(snapshot);
   useEffect(() => {
     if (!networkActive) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- terminal snapshots close the active connection.
       setConnectionState("closed");
       return;
     }
@@ -100,28 +102,20 @@ export function useAnalysisStream(
     let failures = 0;
     let pollingDelay = 1000;
     let polling = false;
+    let pollingGeneration = 0;
     let source: EventSource | undefined;
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const poll = () => {
+    const poll = (generation = pollingGeneration) => {
       pollTimer = setTimeout(async () => {
-        if (!active) return;
+        if (!active || generation !== pollingGeneration) return;
         const next = await fetchSnapshot().catch(() => null);
-        if (!active || !polling || (next && !shouldUseNetwork(next))) return;
+        if (!active || generation !== pollingGeneration || !polling || (next && !shouldUseNetwork(next))) return;
         pollingDelay = Math.min(pollingDelay * 2, 5000);
         if (!active || !polling) return;
-        poll();
+        poll(generation);
       }, pollingDelay);
-    };
-
-    const refreshWhileActive = () => {
-      refreshTimer = setTimeout(async () => {
-        if (!active) return;
-        const next = await fetchSnapshot().catch(() => null);
-        if (active && (!next || shouldUseNetwork(next))) refreshWhileActive();
-      }, 1000);
     };
 
     const connect = () => {
@@ -134,9 +128,9 @@ export function useAnalysisStream(
         if (!active) return;
         failures = 0;
         polling = false;
+        pollingGeneration += 1;
         if (pollTimer) clearTimeout(pollTimer);
         setConnectionState("connected");
-        void fetchSnapshot().catch(() => undefined);
       };
       source.addEventListener("changed", (event) => {
         if (!active) return;
@@ -153,10 +147,11 @@ export function useAnalysisStream(
         if (failures < 3) return;
 
         polling = true;
+        pollingGeneration += 1;
         source?.close();
         source = undefined;
         setConnectionState("polling");
-        poll();
+        poll(pollingGeneration);
         reconnectTimer = setTimeout(() => {
           if (!active) return;
           failures = 0;
@@ -166,12 +161,10 @@ export function useAnalysisStream(
     };
 
     connect();
-    refreshWhileActive();
     return () => {
       active = false;
       source?.close();
       if (pollTimer) clearTimeout(pollTimer);
-      if (refreshTimer) clearTimeout(refreshTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [fetchSnapshot, jobId, networkActive]);

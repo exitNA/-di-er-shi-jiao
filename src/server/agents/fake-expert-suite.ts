@@ -131,14 +131,14 @@ export class FakeExpertSuite implements ExpertSuite {
     if (failure) throw codedError(failure);
     if (
       expert === "sources" &&
-      process.env.NODE_ENV !== "production" &&
+      isTestScenario() &&
       input.material.startsWith("[测试：信源失败一次]")
     ) {
       const attempts = this.sourceAttempts.get(input.material) ?? 0;
       this.sourceAttempts.set(input.material, attempts + 1);
       if (attempts === 0) throw codedError("SEARCH_UNAVAILABLE");
     }
-    if (process.env.NODE_ENV !== "production" && input.material.startsWith("[测试：任务中断]")) {
+    if (isTestScenario() && input.material.startsWith("[测试：任务中断]")) {
       if (expert === "argument" && !this.consumedInterruptions.has(input.material)) {
         this.armedInterruptions.add(input.material);
       }
@@ -148,6 +148,10 @@ export class FakeExpertSuite implements ExpertSuite {
       }
     }
   }
+}
+
+function isTestScenario(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.E2E_TEST_MODE === "true";
 }
 
 function result<T>(value: T): ExpertResult<T> {

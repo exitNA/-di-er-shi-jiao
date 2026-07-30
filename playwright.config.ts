@@ -22,8 +22,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev --port 3100",
+    command: "pnpm build && pnpm start --port 3100",
     url: baseUrl,
+    timeout: 180_000,
     env: {
       APP_URL: baseUrl,
       DATABASE_URL: testDatabaseUrl,
@@ -31,6 +32,7 @@ export default defineConfig({
       AUTH_SECRET: "test-auth-secret-that-is-at-least-32-bytes",
       AGENT_ADAPTER: "fake",
       ANALYSIS_RUNTIME: "in-process",
+      E2E_TEST_MODE: "true",
     },
   },
 });

@@ -193,7 +193,11 @@ function constrainSources(value: SourcesModule, candidates: SourceCandidate[]): 
   const sourceIdMap = new Map<string, string>();
   const sources: ExternalSource[] = [];
   for (const source of value.sources) {
-    const candidate = candidatesByUrl.get(canonicalizeUrl(source.url));
+    const url = source.url;
+    if (typeof url !== "string") continue;
+    const canonicalUrl = canonicalizeUrl(url);
+    if (!canonicalUrl) continue;
+    const candidate = candidatesByUrl.get(canonicalUrl);
     if (!candidate || sources.some((selected) => selected.id === candidate.id)) continue;
     sourceIdMap.set(source.id, candidate.id);
     sources.push({
