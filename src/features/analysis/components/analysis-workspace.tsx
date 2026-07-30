@@ -15,8 +15,6 @@ import type {
   OverviewModule as OverviewModuleData,
   PerspectivesModule as PerspectivesModuleData,
   ReflectionModule as ReflectionModuleData,
-  ReportModuleStatus,
-  ReportModuleType,
   RisksModule as RisksModuleData,
   SourcesModule as SourcesModuleData,
 } from "@/features/analysis/domain/contracts";
@@ -57,16 +55,6 @@ export function AnalysisWorkspace({
   const sources = snapshot.modules.sources;
   const risks = snapshot.modules.risks;
   const reflection = snapshot.modules.reflection;
-  const visibleStatus = (
-    moduleType: ReportModuleType,
-    status: ReportModuleStatus,
-  ): ReportModuleStatus =>
-    snapshot.status === "running" &&
-    status === "queued" &&
-    ["argument", "perspectives", "sources", "risks"].includes(moduleType)
-      ? "running"
-      : status;
-
   return (
     <main className="min-h-screen px-6 py-12">
       <div className="mx-auto w-full max-w-4xl">
@@ -104,7 +92,7 @@ export function AnalysisWorkspace({
             id="report-module-overview"
             moduleType="overview"
             title="速览"
-            status={visibleStatus("overview", overview.status)}
+            status={overview.status}
           >
             {overview.payload ? (
               <OverviewModule data={overview.payload as OverviewModuleData} />
@@ -114,7 +102,7 @@ export function AnalysisWorkspace({
             id="report-module-argument"
             moduleType="argument"
             title="论证骨架"
-            status={visibleStatus("argument", argument.status)}
+            status={argument.status}
             onRetry={() => retryModule("argument")}
           >
             {argument.payload ? (
@@ -125,7 +113,7 @@ export function AnalysisWorkspace({
             id="report-module-perspectives"
             moduleType="perspectives"
             title="多视角地图"
-            status={visibleStatus("perspectives", perspectives.status)}
+            status={perspectives.status}
             onRetry={() => retryModule("perspectives")}
           >
             {perspectives.payload ? (
@@ -138,7 +126,7 @@ export function AnalysisWorkspace({
             id="report-module-sources"
             moduleType="sources"
             title="信源对照"
-            status={visibleStatus("sources", sources.status)}
+            status={sources.status}
             onRetry={() => retryModule("sources")}
           >
             {sources.payload ? (
@@ -149,7 +137,7 @@ export function AnalysisWorkspace({
             id="report-module-risks"
             moduleType="risks"
             title="认知风险"
-            status={visibleStatus("risks", risks.status)}
+            status={risks.status}
             onRetry={() => retryModule("risks")}
           >
             {risks.payload ? (
@@ -160,7 +148,7 @@ export function AnalysisWorkspace({
             id="report-module-reflection"
             moduleType="reflection"
             title="思考对话"
-            status={visibleStatus("reflection", reflection.status)}
+            status={reflection.status}
           >
             {reflection.payload ? (
               <ReflectionModule

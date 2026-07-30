@@ -50,6 +50,7 @@ describe("BaselineOrchestrator", () => {
 
     expect(result.status).toBe("completed");
     expect(repo.runs.slice(0, 4).map((run) => run.expertType).sort()).toEqual(["argument", "perspectives", "risks", "sources"]);
+    expect(repo.saves.filter((save) => save.status === "running").map((save) => save.moduleType).sort()).toEqual(["argument", "perspectives", "risks", "sources"]);
   });
 
   it("persists the first fast module before the slow source expert resolves", async () => {

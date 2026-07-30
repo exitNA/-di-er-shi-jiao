@@ -89,7 +89,18 @@ export class BaselineOrchestrator {
 
   private async runIndependent(job: ExecutionJob, snapshot: AnalysisSnapshot, moduleType: IndependentModule): Promise<IndependentResult> {
     const current = snapshot.modules[moduleType];
-    const attempt = current.version + 1;
+    const runningVersion = current.version + 1;
+    const attempt = runningVersion;
+    await this.repository.saveModule({
+      jobId: job.jobId,
+      reportId: job.reportId,
+      userId: job.userId,
+      moduleType,
+      status: "running",
+      expectedVersion: current.version,
+      nextVersion: runningVersion,
+      now: this.now(),
+    });
     const result = await this.runExpert(job, moduleType, "baseline", attempt, timeoutsMs[moduleType], async (abortSignal) => {
       let raw: ExpertResult<unknown>;
       switch (moduleType) {
@@ -104,7 +115,7 @@ export class BaselineOrchestrator {
     if (!result.ok) {
       await this.repository.saveModule({
         jobId: job.jobId, reportId: job.reportId, userId: job.userId, moduleType, status: "failed", errorCode: result.errorCode,
-        expectedVersion: current.version, nextVersion: current.version + 1, now: this.now(),
+        expectedVersion: runningVersion, nextVersion: runningVersion + 1, now: this.now(),
       });
       return { ok: false, moduleType, errorCode: result.errorCode };
     }
@@ -112,7 +123,7 @@ export class BaselineOrchestrator {
     const payload = result.value;
     await this.repository.saveModule({
       jobId: job.jobId, reportId: job.reportId, userId: job.userId, moduleType, status: "completed", payload,
-      expectedVersion: current.version, nextVersion: current.version + 1, now: this.now(),
+      expectedVersion: runningVersion, nextVersion: runningVersion + 1, now: this.now(),
     });
     if (moduleType === "sources") await this.repository.replaceSources(job.reportId, (payload as BaselineDraft["sources"]).sources);
     return { ok: true, moduleType, payload };
