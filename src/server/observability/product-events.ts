@@ -110,14 +110,14 @@ export async function getJobOperationalMetrics(
   const [[events], [runs]] = await Promise.all([
     db
       .select({
-        firstModuleAt: sql<Date | null>`
+        firstModuleAt: sql<Date | string | null>`
           min(${analysisEvents.createdAt})
           filter (
             where ${analysisEvents.eventType} = 'module.updated'
               and ${analysisEvents.payload}->>'status' = 'completed'
           )
         `,
-        completedAt: sql<Date | null>`
+        completedAt: sql<Date | string | null>`
           min(${analysisEvents.createdAt})
           filter (
             where ${analysisEvents.eventType} in ('baseline.completed', 'report.degraded')
@@ -184,6 +184,18 @@ function eventProperties(
   }
 }
 
-function elapsed(from: Date, to: Date | null): number | null {
-  return to ? to.getTime() - from.getTime() : null;
+function elapsed(
+  from: Date | string,
+  to: Date | string | null,
+): number | null {
+  return to ? timestampMs(to) - timestampMs(from) : null;
+}
+
+function timestampMs(value: Date | string): number {
+  const milliseconds =
+    value instanceof Date ? value.getTime() : Date.parse(value);
+  if (!Number.isFinite(milliseconds)) {
+    throw new TypeError("Invalid database timestamp");
+  }
+  return milliseconds;
 }
