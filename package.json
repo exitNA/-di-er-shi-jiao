@@ -13,9 +13,12 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "test:contracts": "vitest run tests/contracts",
+    "probe:llm": "tsx scripts/probe-llm.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^3.0.17",
+    "ai": "^7.0.42",
     "next": "16.2.12",
     "react": "19.2.4",
     "react-dom": "19.2.4",
