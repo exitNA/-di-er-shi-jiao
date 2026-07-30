@@ -22,12 +22,18 @@ describe("safe structured logger", () => {
     });
   });
 
-  it("recursively redacts every sensitive key", () => {
+  it("drops arbitrary and sensitive details outside the field allowlist", () => {
     const output = vi.spyOn(console, "error").mockImplementation(() => {});
 
     logError({
       operation: "llm.generate",
       errorCode: "GENERATION_FAILED",
+      jobId: "job-1",
+      moduleType: "sources",
+      durationMs: 50,
+      attempt: 3,
+      email: "secret@example.com",
+      material: "secret-material",
       details: {
         content: "secret-material",
         username: "secret-reader",
@@ -39,10 +45,18 @@ describe("safe structured logger", () => {
           apiKey: "secret-api-key",
         },
       },
-    });
+    } as unknown as Parameters<typeof logError>[0]);
 
     const serialized = String(output.mock.calls[0]?.[0]);
-    expect(serialized).not.toContain("secret-");
-    expect(serialized.match(/\[REDACTED\]/g)).toHaveLength(7);
+    expect(JSON.parse(serialized)).toEqual({
+      level: "error",
+      operation: "llm.generate",
+      errorCode: "GENERATION_FAILED",
+      jobId: "job-1",
+      moduleType: "sources",
+      durationMs: 50,
+      attempt: 3,
+    });
+    expect(serialized).not.toMatch(/secret|details|email|material/);
   });
 });
