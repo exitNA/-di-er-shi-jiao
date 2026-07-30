@@ -39,9 +39,10 @@ describe("FakeExpertSuite", () => {
     vi.useFakeTimers();
     const suite = new FakeExpertSuite({ delaysMs: { sources: 50 }, failures: { sources: "SEARCH_UNAVAILABLE" } });
     const pending = suite.researchSources({ material: "可追溯事实。" });
+    const rejection = expect(pending).rejects.toMatchObject({ code: "SEARCH_UNAVAILABLE" });
 
     await vi.advanceTimersByTimeAsync(50);
-    await expect(pending).rejects.toMatchObject({ code: "SEARCH_UNAVAILABLE" });
+    await rejection;
     vi.useRealTimers();
   });
 
