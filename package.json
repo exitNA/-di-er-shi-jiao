@@ -18,6 +18,8 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "probe:llm": "tsx scripts/probe-llm.ts",
+    "eval:run": "tsx scripts/evaluate-baseline.ts",
+    "eval:score": "tsx scripts/score-evaluation.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
