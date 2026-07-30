@@ -101,10 +101,18 @@ describe("BaselineOrchestrator", () => {
     repo.job.material = "[测试：任务中断]素材中的第一句。";
     const suite = new FakeExpertSuite({ delaysMs: { argument: 0, perspectives: 0, sources: 0, risks: 0 } });
     await new BaselineOrchestrator(suite, repo).run({ jobId: "job-1" });
+    const completedVersions = Object.fromEntries(
+      Object.entries(repo.modules)
+        .filter(([, module]) => module.status === "completed")
+        .map(([moduleType, module]) => [moduleType, module.version]),
+    );
     repo.runs.length = 0;
     await new BaselineOrchestrator(suite, repo).run({ jobId: "job-1" });
 
     expect(repo.runs.filter((run) => run.phase === "baseline").map((run) => run.expertType)).toEqual(["risks"]);
+    for (const [moduleType, version] of Object.entries(completedVersions)) {
+      expect(repo.modules[moduleType as keyof typeof repo.modules].version).toBe(version);
+    }
   });
 
   it("reruns one failed module and then re-synthesizes and reviews the report", async () => {

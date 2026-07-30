@@ -101,7 +101,12 @@ export class BaselineOrchestrator {
 
     const current = await this.snapshot(job);
     if (!current) return { status: "not-found" };
-    return this.publish(job, current, failures.find((failure) => failure.moduleType === "sources")?.errorCode);
+    return this.publish(
+      job,
+      current,
+      modules,
+      failures.find((failure) => failure.moduleType === "sources")?.errorCode,
+    );
   }
 
   private async runIndependent(job: ExecutionJob, snapshot: AnalysisSnapshot, moduleType: IndependentModule): Promise<IndependentResult> {
@@ -146,7 +151,12 @@ export class BaselineOrchestrator {
     return { ok: true, moduleType, payload };
   }
 
-  private async publish(job: ExecutionJob, snapshot: AnalysisSnapshot, sourceError?: string): Promise<RunSummary> {
+  private async publish(
+    job: ExecutionJob,
+    snapshot: AnalysisSnapshot,
+    updatedModules: readonly IndependentModule[],
+    sourceError?: string,
+  ): Promise<RunSummary> {
     const required = ["argument", "perspectives", "risks"] as const;
     if (required.some((moduleType) => snapshot.modules[moduleType].status !== "completed" || !snapshot.modules[moduleType].payload)) {
       return this.recover(job, "REQUIRED_MODULE_UNAVAILABLE");
@@ -174,7 +184,12 @@ export class BaselineOrchestrator {
       if (!revision.ok) return this.recover(job, revision.errorCode);
 
       const finalDraft = baselineDraftSchema.parse(revision.value);
-      for (const moduleType of Object.keys(finalDraft) as ReportModuleType[]) {
+      const modulesToPublish = new Set<ReportModuleType>([
+        "overview",
+        "reflection",
+        ...updatedModules,
+      ]);
+      for (const moduleType of modulesToPublish) {
         if (moduleType === "sources" && sourceError) continue;
         const module = snapshot.modules[moduleType];
         await this.repository.saveModule({
