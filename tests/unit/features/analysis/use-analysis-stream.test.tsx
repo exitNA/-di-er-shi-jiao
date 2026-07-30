@@ -1,0 +1,238 @@
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  AnalysisSnapshot,
+  ReportModuleType,
+} from "@/features/analysis/domain/contracts";
+import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  closed = false;
+  private listeners = new Map<string, (event: Event) => void>();
+
+  constructor(readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    this.listeners.set(type, listener as (event: Event) => void);
+  }
+
+  close() {
+    this.closed = true;
+  }
+
+  emitChanged(lastEventId = "1") {
+    this.listeners.get("changed")?.(
+      new MessageEvent("changed", { lastEventId }),
+    );
+  }
+}
+
+describe("useAnalysisStream", () => {
+  beforeEach(() => {
+    MockEventSource.instances = [];
+    vi.stubGlobal("EventSource", MockEventSource);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("applies newer snapshots after an SSE event", async () => {
+    const initial = snapshot();
+    const newer = snapshot({
+      lastEventId: 1,
+      modules: {
+        ...initial.modules,
+        argument: { status: "completed", version: 1 },
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(newer), { status: 200 }),
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+    await act(async () => {
+      MockEventSource.instances[0].emitChanged("1");
+    });
+
+    expect(result.current.snapshot.modules.argument).toEqual({
+      status: "completed",
+      version: 1,
+    });
+  });
+
+  it("ignores module versions older than the current snapshot", async () => {
+    const initial = snapshot({
+      lastEventId: 1,
+      modules: {
+        ...emptyModules(),
+        argument: { status: "completed", version: 2 },
+      },
+    });
+    const staleModule = snapshot({
+      lastEventId: 2,
+      modules: {
+        ...initial.modules,
+        argument: { status: "running", version: 1 },
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(staleModule), { status: 200 }),
+      ),
+    );
+
+    const { result } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+    await act(async () => {
+      MockEventSource.instances[0].emitChanged("2");
+    });
+
+    expect(result.current.snapshot.modules.argument).toEqual({
+      status: "completed",
+      version: 2,
+    });
+  });
+
+  it("falls back to exponential polling after three SSE connection failures", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(initial), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+    act(() => {
+      const source = MockEventSource.instances[0];
+      source.onerror?.();
+      source.onerror?.();
+      source.onerror?.();
+    });
+
+    expect(result.current.connectionState).toBe("polling");
+    await act(() => vi.advanceTimersByTimeAsync(999));
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1999));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops at recoverable jobs until the user starts a retry", () => {
+    const initial = snapshot({ status: "recoverable" });
+    const { result } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+
+    expect(result.current.connectionState).toBe("closed");
+    expect(MockEventSource.instances).toHaveLength(0);
+  });
+
+  it("does not reschedule an in-flight poll after SSE reconnects", async () => {
+    vi.useFakeTimers();
+    const initial = snapshot();
+    let resolveFetch: (response: Response) => void = () => undefined;
+    const fetchMock = vi.fn().mockImplementation(
+      () => new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderHook(() => useAnalysisStream("job-1", initial));
+    act(() => {
+      const source = MockEventSource.instances[0];
+      source.onerror?.();
+      source.onerror?.();
+      source.onerror?.();
+      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(29_000);
+      MockEventSource.instances[1].onopen?.();
+    });
+    await act(async () => {
+      resolveFetch(new Response(JSON.stringify(initial), { status: 200 }));
+    });
+    act(() => vi.advanceTimersByTime(10_000));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops network activity on unmount", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn();
+    const initial = snapshot();
+    vi.stubGlobal("fetch", fetchMock);
+    const { unmount } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+    const source = MockEventSource.instances[0];
+
+    unmount();
+    act(() => {
+      source.emitChanged();
+      source.onerror?.();
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(source.closed).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+});
+
+function snapshot(
+  overrides: Partial<AnalysisSnapshot> = {},
+): AnalysisSnapshot {
+  return {
+    jobId: "job-1",
+    status: "running",
+    configVersion: "baseline-v1",
+    materialPreview: "材料",
+    createdAt: "2026-07-30T00:00:00.000Z",
+    updatedAt: "2026-07-30T00:00:00.000Z",
+    lastEventId: 0,
+    modules: emptyModules(),
+    ...overrides,
+  };
+}
+
+function emptyModules(): AnalysisSnapshot["modules"] {
+  return Object.fromEntries(
+    (
+      [
+        "overview",
+        "argument",
+        "perspectives",
+        "sources",
+        "risks",
+        "reflection",
+      ] satisfies ReportModuleType[]
+    ).map((moduleType) => [
+      moduleType,
+      { status: "queued" as const, version: 0 },
+    ]),
+  ) as AnalysisSnapshot["modules"];
+}

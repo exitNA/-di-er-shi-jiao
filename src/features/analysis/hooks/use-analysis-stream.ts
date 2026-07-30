@@ -1,0 +1,203 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  AnalysisSnapshot,
+  ReportModuleType,
+} from "@/features/analysis/domain/contracts";
+
+export type AnalysisConnectionState =
+  | "connecting"
+  | "connected"
+  | "polling"
+  | "closed";
+
+type RetryableModuleType = Exclude<
+  ReportModuleType,
+  "overview" | "reflection"
+>;
+
+export function useAnalysisStream(
+  jobId: string,
+  initialSnapshot: AnalysisSnapshot,
+) {
+  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [connectionState, setConnectionState] =
+    useState<AnalysisConnectionState>(
+      shouldUseNetwork(initialSnapshot) ? "connecting" : "closed",
+    );
+  const lastCursor = useRef(initialSnapshot.lastEventId);
+  const controllers = useRef(new Set<AbortController>());
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      for (const controller of controllers.current) controller.abort();
+      controllers.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    setSnapshot(initialSnapshot);
+    lastCursor.current = initialSnapshot.lastEventId;
+  }, [jobId, initialSnapshot]);
+
+  const request = useCallback(async (url: string, init?: RequestInit) => {
+    const controller = new AbortController();
+    controllers.current.add(controller);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      controllers.current.delete(controller);
+    }
+  }, []);
+
+  const fetchSnapshot = useCallback(async () => {
+    const response = await request(`/api/analyses/${jobId}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("无法刷新分析结果");
+
+    const next = await response.json() as AnalysisSnapshot;
+    if (mounted.current) {
+      lastCursor.current = Math.max(lastCursor.current, next.lastEventId);
+      setSnapshot((current) => mergeSnapshots(current, next));
+    }
+    return next;
+  }, [jobId, request]);
+
+  const retryModule = useCallback(
+    async (moduleType: RetryableModuleType) => {
+      const response = await request(
+        `/api/analyses/${jobId}/modules/${moduleType}/retry`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? "模块重试失败");
+      }
+      await fetchSnapshot();
+    },
+    [fetchSnapshot, jobId, request],
+  );
+
+  const networkActive = shouldUseNetwork(snapshot);
+  useEffect(() => {
+    if (!networkActive) {
+      setConnectionState("closed");
+      return;
+    }
+
+    let active = true;
+    let failures = 0;
+    let pollingDelay = 1000;
+    let polling = false;
+    let source: EventSource | undefined;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const poll = () => {
+      pollTimer = setTimeout(async () => {
+        if (!active) return;
+        const next = await fetchSnapshot().catch(() => null);
+        if (!active || !polling || (next && !shouldUseNetwork(next))) return;
+        pollingDelay = Math.min(pollingDelay * 2, 5000);
+        if (!active || !polling) return;
+        poll();
+      }, pollingDelay);
+    };
+
+    const connect = () => {
+      if (!active) return;
+      setConnectionState("connecting");
+      source = new EventSource(
+        `/api/analyses/${jobId}/events?after=${lastCursor.current}`,
+      );
+      source.onopen = () => {
+        if (!active) return;
+        failures = 0;
+        polling = false;
+        if (pollTimer) clearTimeout(pollTimer);
+        setConnectionState("connected");
+      };
+      source.addEventListener("changed", (event) => {
+        if (!active) return;
+        const cursor = Number((event as MessageEvent).lastEventId);
+        if (Number.isSafeInteger(cursor)) {
+          lastCursor.current = Math.max(lastCursor.current, cursor);
+        }
+        void fetchSnapshot().catch(() => undefined);
+      });
+      source.onerror = () => {
+        if (!active || polling) return;
+        failures += 1;
+        setConnectionState("connecting");
+        if (failures < 3) return;
+
+        polling = true;
+        source?.close();
+        source = undefined;
+        setConnectionState("polling");
+        poll();
+        reconnectTimer = setTimeout(() => {
+          if (!active) return;
+          failures = 0;
+          connect();
+        }, 30_000);
+      };
+    };
+
+    connect();
+    return () => {
+      active = false;
+      source?.close();
+      if (pollTimer) clearTimeout(pollTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [fetchSnapshot, jobId, networkActive]);
+
+  return { snapshot, connectionState, retryModule };
+}
+
+function shouldUseNetwork(snapshot: AnalysisSnapshot): boolean {
+  if (snapshot.status === "completed" || snapshot.status === "recoverable") {
+    return false;
+  }
+  if (snapshot.status === "partial") {
+    return Object.values(snapshot.modules).some(
+      (module) => module.status === "running",
+    );
+  }
+  return true;
+}
+
+function mergeSnapshots(
+  current: AnalysisSnapshot,
+  next: AnalysisSnapshot,
+): AnalysisSnapshot {
+  if (next.lastEventId < current.lastEventId) return current;
+
+  const modules = Object.fromEntries(
+    Object.entries(next.modules).map(([moduleType, module]) => {
+      const currentModule = current.modules[moduleType as ReportModuleType];
+      return [
+        moduleType,
+        module.version < currentModule.version ? currentModule : module,
+      ];
+    }),
+  ) as AnalysisSnapshot["modules"];
+
+  return {
+    ...next,
+    lastEventId: Math.max(current.lastEventId, next.lastEventId),
+    modules,
+  };
+}

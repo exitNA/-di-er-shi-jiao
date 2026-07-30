@@ -54,7 +54,14 @@ export class BaselineOrchestrator {
       throw new Error(`Only failed modules can be retried: ${retry}`);
     }
 
-    const acquired = await this.repository.transitionJob(input.jobId, ["queued", "partial", "recoverable"], "running", { now: this.now() });
+    const acquired = retry && job.status === "running"
+      ? true
+      : await this.repository.transitionJob(
+          input.jobId,
+          ["queued", "partial", "recoverable"],
+          "running",
+          { now: this.now() },
+        );
     if (!acquired) return { status: "already-running" };
     await this.repository.appendEvent({ jobId: job.jobId, userId: job.userId, eventType: "job.started", payload: { state: "running" }, now: this.now() });
 
