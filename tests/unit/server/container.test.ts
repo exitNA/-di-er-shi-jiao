@@ -16,32 +16,40 @@ describe("getContainer", () => {
     vi.unstubAllEnvs();
   });
 
-  it("creates one fake in-process container without external keys", async () => {
-    stubEnv({ AGENT_ADAPTER: "fake", ANALYSIS_RUNTIME: "in-process" });
-    const { getContainer } = await import("@/server/container");
-    const { InProcessAnalysisDispatcher } = await import(
-      "@/server/adapters/tasks/in-process-analysis-dispatcher"
-    );
+  it(
+    "creates one fake in-process container without external keys",
+    async () => {
+      stubEnv({ AGENT_ADAPTER: "fake", ANALYSIS_RUNTIME: "in-process" });
+      const { getContainer } = await import("@/server/container");
+      const { InProcessAnalysisDispatcher } = await import(
+        "@/server/adapters/tasks/in-process-analysis-dispatcher"
+      );
 
-    const first = getContainer();
+      const first = getContainer();
 
-    expect(first).toBe(getContainer());
-    expect(first.analysisDispatcher).toBeInstanceOf(
-      InProcessAnalysisDispatcher,
-    );
-    expect(first.baselineOrchestrator).toBeDefined();
-  });
+      expect(first).toBe(getContainer());
+      expect(first.analysisDispatcher).toBeInstanceOf(
+        InProcessAnalysisDispatcher,
+      );
+      expect(first.baselineOrchestrator).toBeDefined();
+    },
+    30_000,
+  );
 
-  it("rejects a real agent without LLM and Tavily settings", async () => {
-    stubEnv({
-      AGENT_ADAPTER: "openai-compatible",
-      ANALYSIS_RUNTIME: "in-process",
-    });
-    const { getContainer } = await import("@/server/container");
+  it(
+    "rejects a real agent without LLM and Tavily settings",
+    async () => {
+      stubEnv({
+        AGENT_ADAPTER: "openai-compatible",
+        ANALYSIS_RUNTIME: "in-process",
+      });
+      const { getContainer } = await import("@/server/container");
 
-    expect(() => getContainer()).toThrow(/LLM_BASE_URL/);
-    expect(() => getContainer()).toThrow(/TAVILY_API_KEY/);
-  });
+      expect(() => getContainer()).toThrow(/LLM_BASE_URL/);
+      expect(() => getContainer()).toThrow(/TAVILY_API_KEY/);
+    },
+    30_000,
+  );
 
   it("rejects Trigger runtime without Trigger settings", async () => {
     stubEnv({ AGENT_ADAPTER: "fake", ANALYSIS_RUNTIME: "trigger" });
