@@ -25,7 +25,9 @@ export async function runLlmProbe() {
         execute: async ({ message }) => message,
       }),
     },
-    toolChoice: "required",
+    prepareStep: ({ stepNumber }) => ({
+      toolChoice: stepNumber === 0 ? "required" : "none",
+    }),
     output: Output.object({
       schema: z.object({
         chinese: z.literal("通过"),
