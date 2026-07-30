@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, exists, gt, inArray, lt, sql } from "drizzle-orm";
 import type {
   AnalysisJobStatus,
   AnalysisSnapshot,
@@ -181,7 +181,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         lastEventId: lastEvent?.id ?? 0,
         modules: moduleMap,
       };
-    });
+    }, { isolationLevel: "repeatable read", accessMode: "read only" });
   }
 
   async listOwnedHistory(userId: string, limit: number, before?: Date): Promise<HistoryItem[]> {
@@ -284,6 +284,20 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
             eq(reportModules.reportId, input.reportId),
             eq(reportModules.moduleType, input.moduleType),
             eq(reportModules.version, input.expectedVersion),
+            exists(
+              tx
+                .select({ reportId: reports.id })
+                .from(reports)
+                .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+                .where(
+                  and(
+                    eq(reports.id, input.reportId),
+                    eq(reports.jobId, input.jobId),
+                    eq(reports.userId, input.userId),
+                    eq(analysisJobs.userId, input.userId),
+                  ),
+                ),
+            ),
           ),
         )
         .returning({ id: reportModules.id });
