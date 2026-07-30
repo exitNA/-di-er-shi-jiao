@@ -10,8 +10,7 @@
 pnpm install
 cp .env.example .env.local
 openssl rand -hex 32
-pnpm db:up
-DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective pnpm db:migrate
+pnpm db:init:dev
 pnpm dev
 ```
 

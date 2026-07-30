@@ -19,8 +19,7 @@ openssl rand -hex 32
 启动本地 PostgreSQL 并执行迁移：
 
 ```bash
-pnpm db:up
-DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective pnpm db:migrate
+pnpm db:init:dev
 ```
 
 本地应用库为 `second_perspective`，隔离测试库为 `second_perspective_test`。集成测试和 E2E 夹具会自动迁移并清理测试库。需要手动清理时，使用仓库内置的安全检查；数据库名不以 `_test` 结尾时命令会拒绝执行：
