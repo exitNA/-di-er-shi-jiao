@@ -154,8 +154,7 @@ pnpm exec trigger.dev deploy
 | LLM | `LLM_AUTHENTICATION_FAILED`、`LLM_RATE_LIMITED`、`LLM_TIMEOUT`、`LLM_SCHEMA_INVALID`、`LLM_UNKNOWN_ERROR` |
 | 搜索 | `SEARCH_AUTHENTICATION_FAILED`、`SEARCH_RATE_LIMITED`、`SEARCH_QUERY_TOO_LONG`、`SEARCH_UNAVAILABLE`、`SEARCH_UNKNOWN_ERROR` |
 
-HTTP 层还会返回 `NOT_FOUND`、`MODULE_NOT_RETRYABLE`、`MODULE_NOT_FAILED`、
-`JOB_NOT_RETRYABLE`。跨用户读取和重试统一表现为 `404`，不要向调用方泄露资源是否存在。
+表中的英文错误码用于任务状态、事件和安全日志诊断；它们不是当前 HTTP API 的响应字段。读取快照或事件时，未登录返回 `401` 和“请先登录”，资源不属于当前用户或不存在时统一返回 `404` 和“分析不存在”。重试路由成功返回 `202`；模块不支持重试返回 `400`，当前状态不能重试返回 `409`，派发失败返回 `503`，响应正文均为中文 `error`。跨用户读取和重试统一表现为 `404`，不要向调用方泄露资源是否存在。
 
 ## 7. 重试与恢复
 
