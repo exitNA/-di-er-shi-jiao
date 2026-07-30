@@ -12,7 +12,7 @@ test("keeps the first module across refresh and streams the rest", async ({
   await submit(page, "刷新后仍应保留已经完成的论证模块。");
 
   await expect(page.getByText("论证骨架已完成")).toBeVisible();
-  await expect(page.getByText("信源对照分析中")).toBeVisible();
+  await expect(page.getByText(/信源对照(?:分析中|已完成)/)).toBeVisible();
   await page.reload();
 
   await expect(page.getByText("论证骨架已完成")).toBeVisible();

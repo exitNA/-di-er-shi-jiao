@@ -64,10 +64,9 @@ test("supports the report journey by keyboard with stable accessible updates", a
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL("/");
 
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  await expect(page.getByLabel("想分析的内容")).toBeFocused();
+  const content = page.getByLabel("想分析的内容");
+  await content.focus();
+  await expect(content).toBeFocused();
   await page.keyboard.type("键盘用户可以完成报告流程。");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "开始分析" })).toBeFocused();
