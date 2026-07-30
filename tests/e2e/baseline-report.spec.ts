@@ -7,6 +7,7 @@ test("renders modules progressively and restores them after reload", async ({
   await page.getByLabel("用户名").fill("baseline_reader");
   await page.getByLabel("密码").fill("a secure baseline password");
   await page.getByRole("button", { name: "创建账号" }).click();
+  await expect(page).toHaveURL("/");
 
   await page
     .getByLabel("想分析的内容")
