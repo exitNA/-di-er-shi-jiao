@@ -2,7 +2,6 @@ import path from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { loadServerEnv } from "@/server/config/env";
 import { createDb, type AppDb } from "@/server/db/client";
 
 const applicationTables = [
@@ -21,11 +20,11 @@ const applicationTables = [
 ].map((table) => `\"${table}\"`);
 
 function testDatabaseUrl(): string {
-  const { TEST_DATABASE_URL } = loadServerEnv();
-  if (!TEST_DATABASE_URL) {
+  const testDatabaseUrl = process.env.TEST_DATABASE_URL;
+  if (!testDatabaseUrl) {
     throw new Error("TEST_DATABASE_URL is required");
   }
-  return TEST_DATABASE_URL;
+  return testDatabaseUrl;
 }
 
 export function createTestDb(): AppDb {
