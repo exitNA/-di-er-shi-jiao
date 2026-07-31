@@ -29,5 +29,22 @@ app.prepare().then(() => {
         dev ? 'development' : process.env.COZE_PROJECT_ENV
       }`,
     );
+    console.info(
+      JSON.stringify({
+        event: 'server_started',
+        hostname,
+        port,
+        nodeEnv: process.env.NODE_ENV ?? 'development',
+        cozeProjectEnv: process.env.COZE_PROJECT_ENV ?? 'development',
+        agentAdapter: process.env.AGENT_ADAPTER ?? 'fake',
+        analysisRuntime: process.env.ANALYSIS_RUNTIME ?? 'in-process',
+        databaseConfigured: Boolean(process.env.DATABASE_URL),
+        authConfigured: Boolean(process.env.AUTH_SECRET),
+        llmConfigured: Boolean(process.env.LLM_API_KEY),
+        tavilyConfigured: Boolean(process.env.TAVILY_API_KEY),
+        triggerConfigured: Boolean(process.env.TRIGGER_SECRET_KEY),
+        telemetryConfigured: Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT),
+      }),
+    );
   });
 });
