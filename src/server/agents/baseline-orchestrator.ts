@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getLogger } from "@logtape/logtape";
 import {
   argumentModuleSchema,
   baselineDraftSchema,
@@ -15,7 +16,6 @@ import {
   calculateTokenCostUsd,
   formatTokenCostUsd,
 } from "@/server/observability/cost";
-import { logError, logInfo } from "@/server/observability/logger";
 import {
   type ProductEventInput,
   type ProductEventRecorder,
@@ -42,6 +42,7 @@ const timeoutsMs: Record<IndependentModule | "synthesis" | "review" | "revision"
 };
 
 const emptySources: BaselineDraft["sources"] = { claims: [], sources: [], relations: [], gaps: [] };
+const logger = getLogger(["second-perspective", "analysis"]);
 
 export class BaselineOrchestrator {
   constructor(
@@ -258,24 +259,13 @@ export class BaselineOrchestrator {
       );
       const durationMs = Date.now() - started;
       await this.finishRun(id, "completed", result.usage, durationMs);
-      logInfo({
-        jobId: job.jobId,
-        operation: `${expertType}.${phase}`,
-        durationMs,
-        attempt,
-      });
+      logger.info("Expert run completed", { jobId: job.jobId, operation: `${expertType}.${phase}`, durationMs, attempt });
       return { ok: true, value: result.value };
     } catch (error) {
       const code = errorCode(error);
       const durationMs = Date.now() - started;
       await this.finishRun(id, "failed", undefined, durationMs, code);
-      logError({
-        jobId: job.jobId,
-        operation: `${expertType}.${phase}`,
-        errorCode: code,
-        durationMs,
-        attempt,
-      });
+      logger.error("Expert run failed", { jobId: job.jobId, operation: `${expertType}.${phase}`, errorCode: code, durationMs, attempt });
       return { ok: false, errorCode: code };
     }
   }
@@ -317,11 +307,7 @@ export class BaselineOrchestrator {
   private async recover(job: ExecutionJob, failureCode: string): Promise<RunSummary> {
     await this.repository.transitionJob(job.jobId, ["running"], "recoverable", { failureCode, now: this.now() });
     await this.repository.appendEvent({ jobId: job.jobId, userId: job.userId, eventType: "job.recoverable", payload: { errorCode: failureCode }, now: this.now() });
-    logError({
-      jobId: job.jobId,
-      operation: "analysis.job",
-      errorCode: failureCode,
-    });
+    logger.error("Analysis job recovered", { jobId: job.jobId, operation: "analysis.job", errorCode: failureCode });
     return { status: "recoverable" };
   }
 
@@ -329,11 +315,7 @@ export class BaselineOrchestrator {
     try {
       await this.productEventRecorder(input);
     } catch {
-      logError({
-        operation: "product_event.record",
-        jobId: input.jobId,
-        errorCode: "PRODUCT_EVENT_FAILED",
-      });
+      logger.error("Product event recording failed", { jobId: input.jobId, errorCode: "PRODUCT_EVENT_FAILED" });
     }
   }
 

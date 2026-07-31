@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { logError } from "@/server/observability/logger";
+import { getLogger } from "@logtape/logtape";
 import type { ProductEventRecorder } from "@/server/observability/product-events";
 import type { AnalysisDispatcher } from "./analysis-dispatcher";
 import type { AnalysisRepository } from "./analysis-repository";
 
 const maxContentLength = 20_000;
+const logger = getLogger(["second-perspective", "analysis"]);
 
 export type SubmitAnalysisInput = {
   userId: string;
@@ -49,11 +50,7 @@ export async function submitAnalysis(
         now: now(),
       });
     } catch {
-      logError({
-        operation: "product_event.record",
-        jobId: created.jobId,
-        errorCode: "PRODUCT_EVENT_FAILED",
-      });
+      logger.error("Product event recording failed", { jobId: created.jobId, errorCode: "PRODUCT_EVENT_FAILED" });
     }
 
     try {

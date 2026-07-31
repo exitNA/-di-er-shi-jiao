@@ -11,6 +11,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: ^3.0.18
         version: 3.0.18(zod@4.4.3)
+      '@logtape/logtape':
+        specifier: ^2.3.0
+        version: 2.3.0
       '@node-rs/argon2':
         specifier: ^2.0.2
         version: 2.0.2
@@ -1376,6 +1379,9 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@langchain/core': ^1.2.2
+
+  '@logtape/logtape@2.3.0':
+    resolution: {integrity: sha512-s/pxCgf9Gg75ypTV/bRUq355Dy/JP/zUJWfgJQPO5pTkXC23X2AXBcmBBgFiWH+bSi4yiX/G06qGV8CdAWD3SA==}
 
   '@microsoft/fetch-event-source@2.0.1':
     resolution: {integrity: sha512-W6CLUJ2eBMw3Rec70qrsEW0jOm/3twwJv21mrmj2yORiaVmVYGS4sSS5yUwvQc1ZlDLYGPnClVWmUUMagKNsfA==}
@@ -6926,6 +6932,8 @@ snapshots:
       - '@smithy/hash-node'
       - '@smithy/signature-v4'
       - ws
+
+  '@logtape/logtape@2.3.0': {}
 
   '@microsoft/fetch-event-source@2.0.1': {}
 
