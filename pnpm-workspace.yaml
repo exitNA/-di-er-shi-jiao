@@ -3,6 +3,8 @@ allowBuilds:
   msw: true
   protobufjs: true
   sharp: true
+  unrs-resolver: true
+
 minimumReleaseAgeExclude:
   - '@trigger.dev/core@4.5.9'
   - '@trigger.dev/sdk@4.5.9'
