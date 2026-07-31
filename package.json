@@ -3,15 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "bash ./scripts/build.sh",
     "dev": "bash ./scripts/dev.sh",
-    "preinstall": "npx only-allow pnpm",
+    "build": "bash ./scripts/build.sh",
+    "start": "bash ./scripts/start.sh",
     "lint": "eslint",
+    "preinstall": "npx only-allow pnpm",
     "lint:build": "eslint . --quiet",
     "lint:style": "stylelint \"src/**/*.css\"",
-    "start": "bash ./scripts/start.sh",
     "ts-check": "tsc -p tsconfig.json",
-    "validate": "pnpm dlx concurrently --group --names lint-tsc,lint-build,lint-style \"pnpm ts-check\" \"pnpm lint:build\" \"pnpm lint:style\""
+    "validate": "concurrently --group --names lint-tsc,lint-build,lint-style \"pnpm ts-check\" \"pnpm lint:build\" \"pnpm lint:style\"",
+    "typecheck": "tsc --noEmit",
+    "test": "pnpm test:unit",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --maxWorkers=1",
+    "test:e2e": "playwright test",
+    "test:contracts": "vitest run tests/contracts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:up": "docker compose up -d postgres",
+    "db:init:dev": "docker compose up -d --wait postgres && DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective pnpm db:migrate",
+    "db:down": "docker compose down",
+    "probe:llm": "tsx scripts/probe-llm.ts",
+    "eval:run": "tsx scripts/evaluate-baseline.ts",
+    "eval:score": "tsx scripts/score-evaluation.ts",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.18",
@@ -66,7 +81,6 @@
     "coze-coding-dev-sdk": "^0.7.24",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
-    "drizzle-kit": "^0.31.8",
     "drizzle-zod": "^0.8.3",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
@@ -100,6 +114,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^9.2.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.2.12",
@@ -111,7 +126,7 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   },
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@11.18.0",
   "engines": {
     "pnpm": ">=9.0.0"
   }
