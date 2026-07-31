@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+:root {
+  --color-paper: #f7f7f4;
+  --color-paper-dim: #efeee9;
+  --color-ink: #1b1d22;
+  --color-ink-soft: #5b5e68;
+  --color-ink-faint: #9497a1;
+
+  --color-primary: #4338ca;
+  --color-primary-hover: #362cae;
+  --color-primary-soft: #edecfb;
+
+  --color-secondary: #0e8f8a;
+  --color-secondary-soft: #e3f4f3;
+
+  --color-border: #e2e1da;
+  --color-danger: #d6483c;
+  --color-danger-soft: #fbeae8;
+
+  --color-caution: #a8690c;
+  --color-caution-soft: #faf1e0;
+
+  /* 多视角地图：按立场区分 */
+  --color-support: #1f8a5f;
+  --color-support-soft: #e1f2ea;
+  --color-oppose: #c9483a;
+  --color-oppose-soft: #fbe9e6;
+  --color-controversial: #b3860a;
+  --color-controversial-soft: #faf1d3;
+  --color-unknown: #6b6f7a;
+  --color-unknown-soft: #ececec;
+
+  /* 认知风险清单：按谬误类型区分的标签色 */
+  --color-tag-orange: #c1650f;
+  --color-tag-orange-soft: #fbe9d9;
+  --color-tag-blue: #2461b0;
+  --color-tag-blue-soft: #e3edfa;
+  --color-tag-purple: #8a3fae;
+  --color-tag-purple-soft: #f2e7f7;
+  --color-tag-red: #c9483a;
+  --color-tag-red-soft: #fbe9e6;
+  --color-tag-gray: #5b5e68;
+  --color-tag-gray-soft: #eceeef;
+  --color-tag-yellow: #b3860a;
+  --color-tag-yellow-soft: #faf1d3;
+  --color-tag-lightgray: #9497a1;
+  --color-tag-lightgray-soft: #f4f4f2;
+}
+
+@theme inline {
+  --color-paper: var(--color-paper);
+  --color-paper-dim: var(--color-paper-dim);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-ink-faint: var(--color-ink-faint);
+
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-soft: var(--color-primary-soft);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-soft: var(--color-secondary-soft);
+
+  --color-border: var(--color-border);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-caution: var(--color-caution);
+  --color-caution-soft: var(--color-caution-soft);
+
+  --color-support: var(--color-support);
+  --color-support-soft: var(--color-support-soft);
+  --color-oppose: var(--color-oppose);
+  --color-oppose-soft: var(--color-oppose-soft);
+  --color-controversial: var(--color-controversial);
+  --color-controversial-soft: var(--color-controversial-soft);
+  --color-unknown: var(--color-unknown);
+  --color-unknown-soft: var(--color-unknown-soft);
+
+  --color-tag-orange: var(--color-tag-orange);
+  --color-tag-orange-soft: var(--color-tag-orange-soft);
+  --color-tag-blue: var(--color-tag-blue);
+  --color-tag-blue-soft: var(--color-tag-blue-soft);
+  --color-tag-purple: var(--color-tag-purple);
+  --color-tag-purple-soft: var(--color-tag-purple-soft);
+  --color-tag-red: var(--color-tag-red);
+  --color-tag-red-soft: var(--color-tag-red-soft);
+  --color-tag-gray: var(--color-tag-gray);
+  --color-tag-gray-soft: var(--color-tag-gray-soft);
+  --color-tag-yellow: var(--color-tag-yellow);
+  --color-tag-yellow-soft: var(--color-tag-yellow-soft);
+  --color-tag-lightgray: var(--color-tag-lightgray);
+  --color-tag-lightgray-soft: var(--color-tag-lightgray-soft);
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+::selection {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.animate-shake {
+  animation: shake 0.5s;
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-rise {
+  animation: rise 0.35s ease-out;
+}
