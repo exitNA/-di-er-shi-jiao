@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在服务启动成功后输出安全的结构化配置摘要。
+**Goal:** 在服务启动成功后输出安全且人类可读的配置摘要。
 
-**Architecture:** `src/server.ts` 在 HTTP 服务监听回调中组装固定字段的对象，并通过 `JSON.stringify` 输出。敏感配置只通过布尔值表达是否存在。
+**Architecture:** `src/server.ts` 在 HTTP 服务监听回调中组装固定字段，并输出单行键值文本。敏感配置只通过掩码或布尔值表达是否存在。
 
 **Tech Stack:** Node.js、Next.js、TypeScript。
 
@@ -23,7 +23,7 @@
 
 **Interfaces:**
 - Consumes: `process.env` 中的运行环境变量。
-- Produces: 一条 `event: "server_started"` 的 JSON 日志。
+- Produces: 一条以 `Startup config:` 开头的文本日志。
 
 - [x] **Step 1: 定义安全字段**
 
@@ -57,12 +57,12 @@
 }
 ```
 
-- [x] **Step 2: 输出 JSON 日志**
+- [x] **Step 2: 输出文本日志**
 
 在现有监听地址日志之后调用：
 
 ```ts
-console.info(JSON.stringify(startupConfig));
+console.info(`Startup config: database=${databaseSummary}`);
 ```
 
 - [x] **Step 3: 验证启动日志与敏感值保护**
@@ -73,7 +73,7 @@ console.info(JSON.stringify(startupConfig));
 DATABASE_URL='postgres://user:super-secret@localhost/app' AUTH_SECRET='a-very-long-secret-value-for-verification' timeout 20s pnpm dev
 ```
 
-预期：日志包含 `"event":"server_started"` 与掩码数据库摘要，不包含 `super-secret`、用户名、密码或认证密钥内容。
+预期：日志包含 `Startup config:` 与掩码数据库摘要，不包含 `super-secret`、用户名、密码或认证密钥内容。
 
 - [x] **Step 4: 验证类型与格式**
 

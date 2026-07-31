@@ -51,22 +51,13 @@ app.prepare().then(() => {
         dev ? 'development' : process.env.COZE_PROJECT_ENV
       }`,
     );
+    const databaseSummary = database.configured
+      ? database.valid
+        ? `${database.protocol}//${database.username}:${database.password}@${database.host}${database.port ? `:${database.port}` : ''}/${database.name}${database.sslMode ? ` (sslmode=${database.sslMode})` : ''}`
+        : 'invalid'
+      : 'not configured';
     console.info(
-      JSON.stringify({
-        event: 'server_started',
-        hostname,
-        port,
-        nodeEnv: process.env.NODE_ENV ?? 'development',
-        cozeProjectEnv: process.env.COZE_PROJECT_ENV ?? 'development',
-        agentAdapter: process.env.AGENT_ADAPTER ?? 'fake',
-        analysisRuntime: process.env.ANALYSIS_RUNTIME ?? 'in-process',
-        database,
-        authConfigured: Boolean(process.env.AUTH_SECRET),
-        llmConfigured: Boolean(process.env.LLM_API_KEY),
-        tavilyConfigured: Boolean(process.env.TAVILY_API_KEY),
-        triggerConfigured: Boolean(process.env.TRIGGER_SECRET_KEY),
-        telemetryConfigured: Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT),
-      }),
+      `Startup config: env=${process.env.NODE_ENV ?? 'development'}; coze=${process.env.COZE_PROJECT_ENV ?? 'development'}; agent=${process.env.AGENT_ADAPTER ?? 'fake'}; runtime=${process.env.ANALYSIS_RUNTIME ?? 'in-process'}; database=${databaseSummary}; auth=${Boolean(process.env.AUTH_SECRET)}; llm=${Boolean(process.env.LLM_API_KEY)}; tavily=${Boolean(process.env.TAVILY_API_KEY)}; trigger=${Boolean(process.env.TRIGGER_SECRET_KEY)}; telemetry=${Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT)}`,
     );
   });
 });

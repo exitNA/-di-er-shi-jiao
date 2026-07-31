@@ -2,7 +2,7 @@
 
 ## 目标
 
-在自定义 HTTP 服务成功监听后输出一条结构化 JSON 日志，便于云日志检索启动环境与运行模式。
+在自定义 HTTP 服务成功监听后输出一条人类可读的启动摘要，便于直接查看启动环境与运行模式。
 
 ## 输出内容
 
@@ -10,10 +10,10 @@
 
 ## 实现
 
-在 `src/server.ts` 的 `server.listen` 回调中解析 `DATABASE_URL` 并构造白名单数据库摘要，再通过 `console.info(JSON.stringify(...))` 输出。事件名固定为 `server_started`。保留现有可读的监听地址日志。
+在 `src/server.ts` 的 `server.listen` 回调中解析 `DATABASE_URL` 并构造白名单数据库摘要，再通过 `console.info` 输出单行键值文本。保留现有可读的监听地址日志。
 
 ## 验收
 
-- 服务启动时输出一条可解析 JSON。
-- JSON 不含完整 `DATABASE_URL`、用户名、密码、`AUTH_SECRET`、API Key 或其他敏感值。
+- 服务启动时输出一条人类可读的启动摘要。
+- 启动摘要不含完整 `DATABASE_URL`、用户名、密码、`AUTH_SECRET`、API Key 或其他敏感值。
 - 开发服务仍可正常启动并响应请求。
