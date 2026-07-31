@@ -7,7 +7,7 @@ const schema = z
     DATABASE_URL: z.string().url(),
     TEST_DATABASE_URL: z.string().url().optional(),
     AUTH_SECRET: z.string().min(32),
-    AGENT_ADAPTER: z.enum(["fake", "openai-compatible"]).default("fake"),
+    AGENT_ADAPTER: z.enum(["fake", "openai-compatible", "coze-coding-dev-sdk"]).default("fake"),
     ANALYSIS_RUNTIME: z.enum(["in-process", "trigger"]).default("in-process"),
     LLM_BASE_URL: z.string().url().optional(),
     LLM_API_KEY: z.string().min(1).optional(),
@@ -34,6 +34,15 @@ const schema = z
             message: `${key} is required`,
           });
         }
+      }
+    }
+    if (value.AGENT_ADAPTER === "coze-coding-dev-sdk") {
+      if (!value.TAVILY_API_KEY) {
+        context.addIssue({
+          code: "custom",
+          path: ["TAVILY_API_KEY"],
+          message: "TAVILY_API_KEY is required for coze-coding-dev-sdk adapter",
+        });
       }
     }
     if (value.ANALYSIS_RUNTIME === "trigger") {

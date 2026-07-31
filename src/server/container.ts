@@ -10,6 +10,7 @@ import {
   type SubmitAnalysisResult,
 } from "@/features/analysis/server/submit-analysis";
 import { OpenAICompatibleGenerator } from "@/server/adapters/ai/openai-compatible-generator";
+import { CozeLlmGenerator } from "@/server/adapters/ai/coze-llm-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
 import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
@@ -44,11 +45,14 @@ export function getContainer(): ApplicationContainer {
       env.AGENT_ADAPTER === "fake"
         ? new FakeExpertSuite()
         : new AiExpertSuite({
-            generator: new OpenAICompatibleGenerator({
-              baseURL: env.LLM_BASE_URL!,
-              apiKey: env.LLM_API_KEY!,
-              modelId: env.LLM_MODEL_ID!,
-            }),
+            generator:
+              env.AGENT_ADAPTER === "coze-coding-dev-sdk"
+                ? new CozeLlmGenerator()
+                : new OpenAICompatibleGenerator({
+                    baseURL: env.LLM_BASE_URL!,
+                    apiKey: env.LLM_API_KEY!,
+                    modelId: env.LLM_MODEL_ID!,
+                  }),
             searchClient: new TavilySearchClient({
               apiKey: env.TAVILY_API_KEY!,
             }),
