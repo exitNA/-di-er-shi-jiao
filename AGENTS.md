@@ -1,35 +1,21 @@
-# 项目上下文
+## 项目技术栈
 
 ### 版本技术栈
 
 - **Framework**: Next.js 16 (App Router)
 - **Core**: React 19
-- **Language**: TypeScript 5
+- **Language**: TypeScript 6
 - **UI 组件**: shadcn/ui (基于 Radix UI)
 - **Styling**: Tailwind CSS 4
 
-## 目录结构
+## 文档语言
 
-```
-├── public/                 # 静态资源
-├── scripts/                # 构建与启动脚本
-│   ├── build.sh            # 构建脚本
-│   ├── dev.sh              # 开发环境启动脚本
-│   ├── prepare.sh          # 预处理脚本
-│   └── start.sh            # 生产环境启动脚本
-├── src/
-│   ├── app/                # 页面路由与布局
-│   ├── components/ui/      # Shadcn UI 组件库
-│   ├── hooks/              # 自定义 Hooks
-│   ├── lib/                # 工具库
-│   │   └── utils.ts        # 通用工具函数 (cn)
-│   └── server.ts           # 自定义服务端入口
-├── next.config.ts          # Next.js 配置
-├── package.json            # 项目依赖管理
-└── tsconfig.json           # TypeScript 配置
-```
+项目文档默认使用中文；代码标识符、命令、路径和专有名词保留原文。
 
-- 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
+## 文档表达
+
+产品、设计和叙事文档以目标、能力、适用范围和替代路径组织内容，采用正向表述。安全边界与验收条件保留精确语义，重复的排除项直接精简。
+
 
 ## 包管理规范
 
@@ -63,3 +49,26 @@
 
 - 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
 - Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+
+## 测试规范
+
+- 单元与组件：Vitest + React Testing Library + `@testing-library/jest-dom`。
+- 端到端：Playwright；仅覆盖关键用户路径。
+- API Mock：MSW，按需引入。
+- `tests/unit/`：`*.test.ts`、`*.test.tsx`；`tests/e2e/`：`*.spec.ts`。
+- 优先断言用户可见行为和业务结果；使用语义化查询，不依赖 DOM 结构。
+- Mock 时间、随机性和外部服务；业务规则保持真实执行。
+
+## Agent skills
+
+### Issue tracker（问题跟踪器）
+
+Issue 和 PRD 统一记录在本仓库的 GitHub Issues 中。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels（分诊标签）
+
+分诊使用五个标准标签名称。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs（领域文档）
+
+领域文档采用 single-context（单上下文）布局。详见 `docs/agents/domain.md`。

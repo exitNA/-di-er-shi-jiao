@@ -1,5 +1,13 @@
-node_modules
-dist
+node_modules/
+dist/
+.worktrees/
+.trigger/
+.idea/
+temp/
+build/
+coverage/
+out/
+
 .DS_Store
 *.swp
 .git/*
@@ -40,7 +48,6 @@ bin/
 
 # Editor / IDE
 .vscode/
-.idea/
 *.iml
 
 # OS / misc
@@ -84,7 +91,6 @@ logs/
 *.xls
 *.ppt
 *.pptx
-*.xlsx
 *.csv
 
 # Preview files
@@ -92,18 +98,16 @@ logs/
 
 # CodeGraph index
 .codegraph
+
 # Dependencies
-node_modules/
 .pnp
 .pnp.js
+
 # Production build
-dist/
-build/
-out/
 .next/
 .rsbuild/
+
 # Testing
-coverage/
 *.lcov
 .nyc_output
 # Environment variables
@@ -163,3 +167,5 @@ Desktop.ini
 # Misc
 .coze-logs
 .codegraph/
+
+next-env.d.ts
