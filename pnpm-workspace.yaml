@@ -12,3 +12,14 @@ minimumReleaseAgeExclude:
   - '@trigger.dev/core@4.5.9'
   - '@trigger.dev/sdk@4.5.9'
   - '@vitejs/plugin-react@6.0.5'
+  - '@ai-sdk/gateway@4.0.33'
+  - '@ai-sdk/openai-compatible@3.0.18'
+  - '@ai-sdk/provider-utils@5.0.16'
+  - '@playwright/test@1.62.1'
+  - '@types/react-dom@19.2.4'
+  - '@types/react@19.2.18'
+  - ai@7.0.44
+  - playwright-core@1.62.1
+  - playwright@1.62.1
+  - tldts-core@7.4.10
+  - tldts@7.4.10

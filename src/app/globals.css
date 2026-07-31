@@ -2,6 +2,7 @@
 
 :root {
   color-scheme: light;
+
   --color-paper: #f7f7f4;
   --color-ink: #1b1d22;
   --color-ink-faint: #9497a1;
@@ -10,6 +11,7 @@
   --color-danger: #d6483c;
   --color-danger-soft: #fbeae8;
   --color-border: #e2e1da;
+
   font-family: Inter, Arial, Helvetica, sans-serif;
 }
 
