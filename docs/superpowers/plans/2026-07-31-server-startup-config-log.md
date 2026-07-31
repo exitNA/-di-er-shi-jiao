@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 不输出连接串、密钥、令牌或密码哈希。
+- 不输出完整连接串、用户名、密码、密钥、令牌或密码哈希。
 - 不新增依赖。
 - 保留现有的可读监听地址日志。
 
@@ -38,7 +38,17 @@
   cozeProjectEnv: process.env.COZE_PROJECT_ENV ?? "development",
   agentAdapter: process.env.AGENT_ADAPTER ?? "fake",
   analysisRuntime: process.env.ANALYSIS_RUNTIME ?? "in-process",
-  databaseConfigured: Boolean(process.env.DATABASE_URL),
+  database: {
+    configured: true,
+    valid: true,
+    protocol: "postgres:",
+    host: "db.example.com",
+    port: "5432",
+    name: "second_perspective",
+    username: "***",
+    password: "***",
+    sslMode: "require",
+  },
   authConfigured: Boolean(process.env.AUTH_SECRET),
   llmConfigured: Boolean(process.env.LLM_API_KEY),
   tavilyConfigured: Boolean(process.env.TAVILY_API_KEY),
@@ -63,7 +73,7 @@ console.info(JSON.stringify(startupConfig));
 DATABASE_URL='postgres://user:super-secret@localhost/app' AUTH_SECRET='a-very-long-secret-value-for-verification' timeout 20s pnpm dev
 ```
 
-预期：日志包含 `"event":"server_started"` 与 `"databaseConfigured":true`，不包含 `super-secret` 或认证密钥内容。
+预期：日志包含 `"event":"server_started"` 与掩码数据库摘要，不包含 `super-secret`、用户名、密码或认证密钥内容。
 
 - [x] **Step 4: 验证类型与格式**
 

@@ -24,6 +24,28 @@ app.prepare().then(() => {
     process.exit(1);
   });
   server.listen(port, () => {
+    const databaseUrl = process.env.DATABASE_URL;
+    let database: Record<string, boolean | string | null> = { configured: false };
+
+    if (databaseUrl) {
+      try {
+        const url = new URL(databaseUrl);
+        database = {
+          configured: true,
+          valid: true,
+          protocol: url.protocol,
+          host: url.hostname,
+          port: url.port || null,
+          name: url.pathname.slice(1) || null,
+          username: url.username ? '***' : null,
+          password: url.password ? '***' : null,
+          sslMode: url.searchParams.get('sslmode'),
+        };
+      } catch {
+        database = { configured: true, valid: false };
+      }
+    }
+
     console.log(
       `> Server listening at http://${hostname}:${port} as ${
         dev ? 'development' : process.env.COZE_PROJECT_ENV
@@ -38,7 +60,7 @@ app.prepare().then(() => {
         cozeProjectEnv: process.env.COZE_PROJECT_ENV ?? 'development',
         agentAdapter: process.env.AGENT_ADAPTER ?? 'fake',
         analysisRuntime: process.env.ANALYSIS_RUNTIME ?? 'in-process',
-        databaseConfigured: Boolean(process.env.DATABASE_URL),
+        database,
         authConfigured: Boolean(process.env.AUTH_SECRET),
         llmConfigured: Boolean(process.env.LLM_API_KEY),
         tavilyConfigured: Boolean(process.env.TAVILY_API_KEY),
