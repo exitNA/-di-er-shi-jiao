@@ -2,14 +2,34 @@
 
 :root {
   color-scheme: light;
-  font-family: Arial, Helvetica, sans-serif;
+  --color-paper: #f7f7f4;
+  --color-ink: #1b1d22;
+  --color-ink-faint: #9497a1;
+  --color-primary: #4338ca;
+  --color-secondary: #0e8f8a;
+  --color-danger: #d6483c;
+  --color-danger-soft: #fbeae8;
+  --color-border: #e2e1da;
+  font-family: Inter, Arial, Helvetica, sans-serif;
+}
+
+@theme inline {
+  --color-paper: var(--color-paper);
+  --color-ink: var(--color-ink);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-border: var(--color-border);
+  --font-display: "Space Grotesk", Inter, sans-serif;
 }
 
 body {
   min-height: 100vh;
   margin: 0;
-  background: #f7f7f5;
-  color: #171717;
+  background: var(--color-paper);
+  color: var(--color-ink);
 }
 
 button,

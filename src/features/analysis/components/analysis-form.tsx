@@ -12,10 +12,12 @@ const messages = {
   REQUEST_FAILED: "提交失败，请稍后重试。",
 };
 
-export function AnalysisForm() {
+export function AnalysisForm({ content: controlledContent, onContentChange, compact = false }: { content?: string; onContentChange?: (value: string) => void; compact?: boolean }) {
   const router = useRouter();
   const idempotencyKey = useRef<string | null>(null);
-  const [content, setContent] = useState("");
+  const [uncontrolledContent, setUncontrolledContent] = useState("");
+  const content = controlledContent ?? uncontrolledContent;
+  const setContent = onContentChange ?? setUncontrolledContent;
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
   const isBlank = !content.trim();
@@ -37,6 +39,10 @@ export function AnalysisForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, idempotencyKey: idempotencyKey.current }),
       });
+      if (response.status === 401) {
+        router.push("/login");
+        return;
+      }
       const body = await response.json().catch(() => null) as { jobId?: string; code?: keyof typeof messages } | null;
       if (response.ok && body?.jobId) {
         router.push(`/analysis/${body.jobId}`);
@@ -51,7 +57,7 @@ export function AnalysisForm() {
   }
 
   return (
-    <form className="mt-10 space-y-4" onSubmit={submit}>
+    <form className={compact ? "mt-10 rounded-2xl border border-border bg-white p-2 shadow-sm" : "mt-10 space-y-4"} onSubmit={submit}>
       <label className="block text-sm font-medium" htmlFor="analysis-content">
         想分析的内容
       </label>
@@ -64,11 +70,12 @@ export function AnalysisForm() {
           setContent(event.target.value);
         }}
         maxLength={maxLength}
-        rows={10}
-        className="w-full rounded-lg border border-neutral-300 bg-white p-4 leading-7"
+        rows={compact ? 3 : 10}
+        placeholder={compact ? "输入你想分析的内容（Shift + Enter 换行）" : undefined}
+        className={compact ? "w-full resize-none bg-transparent p-3 leading-7 outline-none" : "w-full rounded-lg border border-neutral-300 bg-white p-4 leading-7"}
         aria-describedby="analysis-content-help analysis-content-count"
       />
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-neutral-600">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 text-sm text-neutral-600">
         <p id="analysis-content-help">支持 1–20,000 个字符，请粘贴需要核查的完整文本。</p>
         <output id="analysis-content-count" aria-live="polite">{content.length.toLocaleString("en-US")} / 20,000</output>
       </div>
@@ -76,9 +83,10 @@ export function AnalysisForm() {
       <button
         type="submit"
         disabled={pending || isBlank}
-        className="rounded-lg bg-neutral-900 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label="开始分析"
+        className={compact ? "ml-auto flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-white disabled:opacity-30" : "rounded-lg bg-neutral-900 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"}
       >
-        {pending ? "正在提交…" : "开始分析"}
+        {pending ? "正在提交…" : compact ? "↑" : "开始分析"}
       </button>
     </form>
   );

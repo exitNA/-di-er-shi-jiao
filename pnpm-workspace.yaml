@@ -1,0 +1,9 @@
+allowBuilds:
+  esbuild: true
+  msw: true
+  protobufjs: true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@trigger.dev/core@4.5.9'
+  - '@trigger.dev/sdk@4.5.9'
+  - '@vitejs/plugin-react@6.0.5'

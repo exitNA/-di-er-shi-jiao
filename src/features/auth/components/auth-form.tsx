@@ -52,7 +52,7 @@ export function AuthForm({ mode }: { mode: "register" | "login" }) {
           maxLength={32}
           pattern="[A-Za-z0-9_]+"
           required
-          className="mt-2 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2"
+          className="mt-2 w-full rounded-xl border border-border bg-paper px-3.5 py-2.5"
         />
       </div>
       <div>
@@ -67,14 +67,14 @@ export function AuthForm({ mode }: { mode: "register" | "login" }) {
           minLength={6}
           maxLength={128}
           required
-          className="mt-2 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2"
+          className="mt-2 w-full rounded-xl border border-border bg-paper px-3.5 py-2.5"
         />
       </div>
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg bg-neutral-900 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="w-full rounded-full bg-primary px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
       >
         {pending ? "请稍候…" : registering ? "创建账号" : "登录"}
       </button>
