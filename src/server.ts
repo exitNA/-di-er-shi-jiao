@@ -56,8 +56,16 @@ app.prepare().then(() => {
         ? `${database.protocol}//${database.username}:${database.password}@${database.host}${database.port ? `:${database.port}` : ''}/${database.name}${database.sslMode ? ` (sslmode=${database.sslMode})` : ''}`
         : 'invalid'
       : 'not configured';
-    console.info(
-      `Startup config: env=${process.env.NODE_ENV ?? 'development'}; coze=${process.env.COZE_PROJECT_ENV ?? 'development'}; agent=${process.env.AGENT_ADAPTER ?? 'fake'}; runtime=${process.env.ANALYSIS_RUNTIME ?? 'in-process'}; database=${databaseSummary}; auth=${Boolean(process.env.AUTH_SECRET)}; llm=${Boolean(process.env.LLM_API_KEY)}; tavily=${Boolean(process.env.TAVILY_API_KEY)}; trigger=${Boolean(process.env.TRIGGER_SECRET_KEY)}; telemetry=${Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT)}`,
-    );
+    console.info('Startup config:');
+    console.info(`  env=${process.env.NODE_ENV ?? 'development'}`);
+    console.info(`  coze=${process.env.COZE_PROJECT_ENV ?? 'development'}`);
+    console.info(`  agent=${process.env.AGENT_ADAPTER ?? 'fake'}`);
+    console.info(`  runtime=${process.env.ANALYSIS_RUNTIME ?? 'in-process'}`);
+    console.info(`  database=${databaseSummary}`);
+    console.info(`  auth=${Boolean(process.env.AUTH_SECRET)}`);
+    console.info(`  llm=${Boolean(process.env.LLM_API_KEY)}`);
+    console.info(`  tavily=${Boolean(process.env.TAVILY_API_KEY)}`);
+    console.info(`  trigger=${Boolean(process.env.TRIGGER_SECRET_KEY)}`);
+    console.info(`  telemetry=${Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT)}`);
   });
 });

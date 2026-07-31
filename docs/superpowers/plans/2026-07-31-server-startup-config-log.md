@@ -4,7 +4,7 @@
 
 **Goal:** 在服务启动成功后输出安全且人类可读的配置摘要。
 
-**Architecture:** `src/server.ts` 在 HTTP 服务监听回调中组装固定字段，并输出单行键值文本。敏感配置只通过掩码或布尔值表达是否存在。
+**Architecture:** `src/server.ts` 在 HTTP 服务监听回调中组装固定字段，并为每个字段输出一行键值文本。敏感配置只通过掩码或布尔值表达是否存在。
 
 **Tech Stack:** Node.js、Next.js、TypeScript。
 
@@ -23,7 +23,7 @@
 
 **Interfaces:**
 - Consumes: `process.env` 中的运行环境变量。
-- Produces: 一条以 `Startup config:` 开头的文本日志。
+- Produces: 一组以 `Startup config:` 开头的分行文本日志。
 
 - [x] **Step 1: 定义安全字段**
 

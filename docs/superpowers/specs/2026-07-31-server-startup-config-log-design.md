@@ -10,10 +10,10 @@
 
 ## 实现
 
-在 `src/server.ts` 的 `server.listen` 回调中解析 `DATABASE_URL` 并构造白名单数据库摘要，再通过 `console.info` 输出单行键值文本。保留现有可读的监听地址日志。
+在 `src/server.ts` 的 `server.listen` 回调中解析 `DATABASE_URL` 并构造白名单数据库摘要，再通过多条 `console.info` 分行输出键值文本。保留现有可读的监听地址日志。
 
 ## 验收
 
-- 服务启动时输出一条人类可读的启动摘要。
+- 服务启动时为每个配置参数输出一行人类可读日志。
 - 启动摘要不含完整 `DATABASE_URL`、用户名、密码、`AUTH_SECRET`、API Key 或其他敏感值。
 - 开发服务仍可正常启动并响应请求。
