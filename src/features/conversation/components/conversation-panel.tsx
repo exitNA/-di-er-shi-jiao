@@ -9,7 +9,6 @@ import type {
   ConversationMessage,
   ReportItemTarget,
 } from "@/features/analysis/domain/contracts";
-import { reportTargetLabel } from "./revision-history";
 
 type Submission = {
   target: ReportItemTarget;
@@ -49,7 +48,7 @@ export function ConversationPanel({
                 ? "质疑已提交，等待报告更新。"
                 : messages.length
                   ? "对话已更新。"
-                  : "选择一条发现后继续追问。";
+                  : "";
 
   async function submit(submission: Submission) {
     setRequestState("submitting");
@@ -93,19 +92,10 @@ export function ConversationPanel({
     <section
       id="conversation-panel"
       className="flex h-full min-h-0 flex-col"
-      aria-labelledby="conversation-panel-heading"
+      aria-label="对话"
     >
-      <h3 id="conversation-panel-heading" className="font-display text-2xl font-semibold">
-        对话
-      </h3>
-      <p className="mt-2 text-sm leading-6 text-ink-faint">
-        {selectedTarget
-          ? `正在讨论：${reportTargetLabel(selectedTarget)}`
-          : "从右侧选择一条发现，开始和 Agent 一起推理。"}
-      </p>
-
       {messages.length ? (
-        <ol className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
+        <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
           {messages.map((message) => (
             <li key={message.id} className="rounded-2xl bg-forest-soft/65 p-4">
               <p className="text-sm font-medium">
@@ -136,9 +126,7 @@ export function ConversationPanel({
         </ol>
       ) : null}
 
-      <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">
-        {statusText}
-      </p>
+      {statusText ? <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">{statusText}</p> : null}
       <form className="shrink-0 flex items-end gap-2 rounded-2xl border border-border bg-white px-3 py-2 shadow-sm" onSubmit={onSubmit}>
         <label className="sr-only" htmlFor="challenge-content">继续追问</label>
         <Textarea
@@ -146,7 +134,7 @@ export function ConversationPanel({
           value={draft}
           maxLength={5_000}
           required
-          disabled={!selectedTarget || requestState === "submitting"}
+          disabled={requestState === "submitting"}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="继续追问…"
           className="min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 shadow-none focus-visible:border-0 focus-visible:ring-0"

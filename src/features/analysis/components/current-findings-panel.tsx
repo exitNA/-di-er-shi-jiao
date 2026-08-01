@@ -34,6 +34,14 @@ export function CurrentFindingsPanel({
   </section>;
 }
 
+export function firstAvailableFindingTarget(
+  modules: AnalysisSnapshot["modules"],
+): ReportItemTarget | undefined {
+  return (["观点", "证据", "未知"] as const)
+    .flatMap((view) => buildFindings(modules, view))
+    .at(0)?.target;
+}
+
 function buildFindings(modules: AnalysisSnapshot["modules"], view: View): Finding[] {
   const overview = modules.overview.payload as OverviewModule | undefined;
   const argument = modules.argument.payload as ArgumentModule | undefined;

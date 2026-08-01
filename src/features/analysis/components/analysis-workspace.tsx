@@ -1,6 +1,5 @@
 "use client";
 
-import { Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ArgumentModule } from "./argument-module";
@@ -24,16 +23,10 @@ import {
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
 import { AgentWorkspaceLayout } from "./agent-workspace-layout";
-import { CurrentFindingsPanel } from "./current-findings-panel";
+import { CurrentFindingsPanel, firstAvailableFindingTarget } from "./current-findings-panel";
 
 const disclaimer =
   "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。";
-
-function CurrentAction({ modules }: { modules: AnalysisSnapshot["modules"] }) {
-  const active = moduleTypes.find((moduleType) => modules[moduleType].status === "running");
-  const label = active ? { overview: "正在整理观点", argument: "正在核对论据", perspectives: "正在比较立场", sources: "正在核查信源", risks: "正在识别风险", reflection: "正在生成追问" }[active] : "分析已完成";
-  return <p className="mt-5 text-sm text-ink-faint"><span className="mr-2 inline-block size-2 rounded-full bg-secondary" />{label}</p>;
-}
 
 export function AnalysisWorkspace({
   initialSnapshot,
@@ -43,9 +36,6 @@ export function AnalysisWorkspace({
   const { snapshot, connectionState, retryModule, refreshSnapshot } =
     useAnalysisStream(initialSnapshot.jobId, initialSnapshot);
   const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
-  const completed = Object.values(snapshot.modules).filter(
-    (module) => module.status === "completed",
-  ).length;
   const firstModuleEventJobId = useRef<string | null>(null);
   useEffect(() => {
     const moduleType = moduleTypes.find(
@@ -67,14 +57,11 @@ export function AnalysisWorkspace({
       },
     ).catch(() => {});
   }, [snapshot.jobId, snapshot.modules]);
-  const progressText =
-    snapshot.status === "completed"
-      ? "分析已更新"
-      : snapshot.status === "partial"
-        ? `正在补全发现 · 已整理 ${completed} 项`
-      : snapshot.status === "recoverable"
-        ? "分析暂时中断，等待恢复"
-        : "第二视角正在整理线索";
+  useEffect(() => {
+    if (selectedTarget) return;
+    const target = firstAvailableFindingTarget(snapshot.modules);
+    if (target) setSelectedTarget(target);
+  }, [selectedTarget, snapshot.modules]);
   const connectionText = {
     connecting: "正在连接实时更新",
     connected: "实时更新已连接",
@@ -95,7 +82,7 @@ export function AnalysisWorkspace({
           <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
         </header>
         <div className="min-h-0 flex-1"><AgentWorkspaceLayout
-          conversation={<div className="flex h-full min-h-0 flex-col"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><div className="mt-5 ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><CurrentAction modules={snapshot.modules} /><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
+          conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
           findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
           <ReportModule
             id="report-module-overview"
