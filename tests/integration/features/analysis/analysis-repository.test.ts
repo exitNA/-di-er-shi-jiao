@@ -614,6 +614,230 @@ describe("PostgresAnalysisRepository", () => {
     await expect(db.select().from(reportModules)).resolves.toHaveLength(6);
   });
 
+  it("synchronizes sources replacement metadata in the revision transaction", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const oldSource = {
+      id: "source-old",
+      title: "旧来源",
+      url: "https://example.com/old",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 2,
+      excerpt: "旧摘要",
+    };
+    const gap = {
+      id: "gap-1",
+      text: "缺少近期数据。",
+      origin: "source_material" as const,
+      sourceMaterialQuote: "唯一选择。",
+      confidence: { score: 0.7, rationale: "材料没有给出数据" },
+    };
+    await repository.saveModule({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      moduleType: "sources",
+      status: "completed",
+      payload: { claims: [], sources: [oldSource], relations: [], gaps: [gap] },
+      expectedVersion: 0,
+      nextVersion: 1,
+      now,
+    });
+    await repository.replaceSources(input.reportId, [oldSource]);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "sources", section: "gaps", itemId: gap.id },
+      content: "请补充近期来源。",
+      idempotencyKey: "challenge-new-source",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "new-source-worker");
+    const newSource = {
+      id: "source-new",
+      title: "新来源",
+      url: "https://example.com/new",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 1,
+      excerpt: "新摘要",
+    };
+
+    const result = await repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId,
+      agentContent: "已补充近期来源。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "sources",
+        payload: { claims: [], sources: [newSource], relations: [], gaps: [] },
+        expectedVersion: 1,
+        nextVersion: 2,
+      },
+      changes: [{
+        target: { moduleType: "sources", section: "gaps", itemId: gap.id },
+        reason: "找到近期数据。",
+        newEvidenceSourceIds: [newSource.id],
+        summary: "补充来源并关闭缺口。",
+      }],
+      now,
+    });
+
+    const sources = await db
+      .select({ sourceKey: reportSources.sourceKey, title: reportSources.title })
+      .from(reportSources);
+    expect(result.completed).toBe(true);
+    expect(sources).toEqual([{ sourceKey: newSource.id, title: newSource.title }]);
+  });
+
+  it("preserves source metadata referenced by revision history", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const source = {
+      id: "source-history",
+      title: "历史证据",
+      url: "https://example.com/history",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 1,
+      excerpt: "历史证据摘要",
+    };
+    await repository.replaceSources(input.reportId, [source]);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "请用来源复核。",
+      idempotencyKey: "challenge-source-history",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "source-history-worker");
+    const completion = await repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId,
+      agentContent: "来源支持修订。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { items: [] },
+        expectedVersion: 0,
+        nextVersion: 1,
+      },
+      changes: [{
+        target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+        reason: "来源支持。",
+        newEvidenceSourceIds: [source.id],
+        summary: "更新风险。",
+      }],
+      now,
+    });
+    expect(completion.completed).toBe(true);
+
+    await repository.replaceSources(input.reportId, []);
+
+    await expect(db.select({ sourceKey: reportSources.sourceKey }).from(reportSources)).resolves.toEqual([
+      { sourceKey: source.id },
+    ]);
+  });
+
+  it("serializes source replacement with revision evidence completion", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const source = {
+      id: "source-concurrent",
+      title: "并发证据",
+      url: "https://example.com/concurrent",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 1,
+      excerpt: "并发证据摘要",
+    };
+    await repository.replaceSources(input.reportId, [source]);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "请并发复核来源。",
+      idempotencyKey: "challenge-source-concurrent",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "source-concurrent-worker");
+    let moduleLocked!: () => void;
+    let releaseModule!: () => void;
+    const locked = new Promise<void>((resolve) => { moduleLocked = resolve; });
+    const release = new Promise<void>((resolve) => { releaseModule = resolve; });
+    const moduleLock = db.transaction(async (tx) => {
+      await tx
+        .select({ id: reportModules.id })
+        .from(reportModules)
+        .where(and(
+          eq(reportModules.reportId, input.reportId),
+          eq(reportModules.moduleType, "risks"),
+        ))
+        .for("update");
+      moduleLocked();
+      await release;
+    });
+    await locked;
+    const completion = repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId,
+      agentContent: "并发来源支持修订。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { items: [] },
+        expectedVersion: 0,
+        nextVersion: 1,
+      },
+      changes: [{
+        target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+        reason: "并发来源支持。",
+        newEvidenceSourceIds: [source.id],
+        summary: "更新风险。",
+      }],
+      now,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    let replacementSettled = false;
+    const replacement = repository.replaceSources(input.reportId, []).finally(() => {
+      replacementSettled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const settledBeforeRelease = replacementSettled;
+    releaseModule();
+    await moduleLock;
+    const result = await completion;
+    await replacement;
+
+    expect(settledBeforeRelease).toBe(false);
+    expect(result.completed).toBe(true);
+    await expect(db.select({ sourceKey: reportSources.sourceKey }).from(reportSources)).resolves.toEqual([
+      { sourceKey: source.id },
+    ]);
+  });
+
   it("backfills stable unique IDs into legacy risk payloads so they remain targetable", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);
@@ -667,5 +891,49 @@ describe("PostgresAnalysisRepository", () => {
       idempotencyKey: "challenge-migrated-risk",
       now,
     })).resolves.toMatchObject({ created: true });
+  });
+
+  it("rewrites repeated non-empty legacy risk IDs deterministically", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const risk = (quote: string) => ({
+      id: "legacy-duplicate",
+      type: "overgeneralization" as const,
+      sourceMaterialQuote: quote,
+      explanation: "把单一选项扩大成唯一选项。",
+      confidence: { score: 0.8, rationale: "存在绝对化表达" },
+    });
+    await db
+      .update(reportModules)
+      .set({ status: "completed", version: 1, payload: { items: [risk("第一项。"), risk("第二项。")] } })
+      .where(and(
+        eq(reportModules.reportId, input.reportId),
+        eq(reportModules.moduleType, "risks"),
+      ));
+    const migrationSql = readMigrationFiles({
+      migrationsFolder: path.join(process.cwd(), "drizzle"),
+    }).flatMap((migration) => migration.sql);
+    const backfill = migrationSql.find(
+      (statement) => statement.includes("jsonb_array_elements") && statement.includes("report_modules"),
+    );
+    expect(backfill).toBeDefined();
+    if (!backfill) return;
+
+    await db.execute(sql.raw(backfill));
+    const firstSnapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    const firstRisks = risksModuleSchema.parse(firstSnapshot?.modules.risks.payload);
+    const firstIds = firstRisks.items.map((item) => item.id);
+    await db.execute(sql.raw(backfill));
+    const secondSnapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    const secondRisks = risksModuleSchema.parse(secondSnapshot?.modules.risks.payload);
+
+    expect(firstIds[0]).toBe("legacy-duplicate");
+    expect(firstIds[1]).toMatch(/^migrated-risk-/);
+    expect(secondRisks.items.map((item) => item.id)).toEqual(firstIds);
+    expect(resolveReportItemTarget(secondSnapshot!.modules, {
+      moduleType: "risks",
+      section: "items",
+      itemId: firstIds[1],
+    })).toBe(true);
   });
 });

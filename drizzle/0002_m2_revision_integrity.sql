@@ -8,7 +8,14 @@ SET "payload" = jsonb_set(
 		(
 			SELECT jsonb_agg(
 				CASE
-					WHEN NULLIF("risk"."item"->>'id', '') IS NULL THEN
+					WHEN NULLIF("risk"."item"->>'id', '') IS NULL
+						OR EXISTS (
+							SELECT 1
+							FROM jsonb_array_elements("module"."payload"->'items')
+								WITH ORDINALITY AS "prior_risk"("item", "ordinality")
+							WHERE "prior_risk"."ordinality" < "risk"."ordinality"
+								AND NULLIF("prior_risk"."item"->>'id', '') = NULLIF("risk"."item"->>'id', '')
+						) THEN
 						"risk"."item" || jsonb_build_object(
 							'id',
 							'migrated-risk-' || md5(

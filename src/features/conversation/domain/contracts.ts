@@ -62,8 +62,16 @@ export function targetedReviewSchema(
       summary: z.string().min(1),
     }).strict().optional(),
   }).strict().superRefine((value, context) => {
+    const replacementSources = moduleType === "sources" && value.replacement
+      ? sourcesModuleSchema.safeParse(value.replacement.module)
+      : undefined;
+    const replacementSourceIds = new Set(
+      replacementSources?.success
+        ? replacementSources.data.sources.map((source) => source.id)
+        : [],
+    );
     value.replacement?.newEvidenceSourceIds.forEach((sourceId, index) => {
-      if (!allowedEvidenceSourceIds.has(sourceId)) {
+      if (!allowedEvidenceSourceIds.has(sourceId) && !replacementSourceIds.has(sourceId)) {
         context.addIssue({
           code: "custom",
           path: ["replacement", "newEvidenceSourceIds", index],

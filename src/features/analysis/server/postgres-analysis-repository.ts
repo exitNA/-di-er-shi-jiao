@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type {
   AnalysisJobStatus,
   AnalysisSnapshot,
@@ -241,6 +241,23 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       ) {
         return { completed: false };
       }
+
+      const [lockedReport] = await tx
+        .select({ id: reports.id })
+        .from(reports)
+        .where(and(
+          eq(reports.id, input.reportId),
+          eq(reports.jobId, input.jobId),
+          eq(reports.userId, input.userId),
+          eq(reports.currentVersion, input.expectedReportVersion),
+        ))
+        .for("update")
+        .limit(1);
+      if (!lockedReport) {
+        await this.markRevisionRecoverable(tx, input);
+        return { completed: false };
+      }
+
       const evidenceSourceIds = [
         ...new Set(input.changes.flatMap((change) => change.newEvidenceSourceIds)),
       ];
@@ -248,13 +265,15 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         const persistedSources = await tx
           .select({ sourceKey: reportSources.sourceKey })
           .from(reportSources)
-          .where(
-            and(
-              eq(reportSources.reportId, input.reportId),
-              inArray(reportSources.sourceKey, evidenceSourceIds),
-            ),
-          );
-        if (persistedSources.length !== evidenceSourceIds.length) {
+          .where(eq(reportSources.reportId, input.reportId));
+        const replacementSourceIds = input.module.moduleType === "sources"
+          ? input.module.payload.sources.map((source) => source.id)
+          : [];
+        const allowedSourceIds = new Set([
+          ...persistedSources.map((source) => source.sourceKey),
+          ...replacementSourceIds,
+        ]);
+        if (!evidenceSourceIds.every((sourceId) => allowedSourceIds.has(sourceId))) {
           return { completed: false };
         }
       }
@@ -273,6 +292,15 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       if (!report) {
         await this.markRevisionRecoverable(tx, input);
         return { completed: false };
+      }
+
+      if (input.module.moduleType === "sources") {
+        await this.syncReportSources(
+          tx,
+          input.reportId,
+          input.module.payload.sources,
+          evidenceSourceIds,
+        );
       }
 
       const [module] = await tx
@@ -829,24 +857,69 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
 
   async replaceSources(reportId: string, sources: Parameters<AnalysisRepository["replaceSources"]>[1]): Promise<void> {
     await this.db.transaction(async (tx) => {
-      await tx.delete(reportSources).where(eq(reportSources.reportId, reportId));
-      const uniqueSources = [...new Map(sources.map((source) => [source.id, source])).values()];
-      if (!uniqueSources.length) return;
-      await tx.insert(reportSources).values(
-        uniqueSources.map((source) => ({
-          reportId,
-          sourceKey: source.id,
-          title: source.title,
-          url: source.url,
-          canonicalUrl: source.url,
-          domain: source.domain,
-          publisher: source.publisher,
-          publishedAt: source.publishedAt ? new Date(source.publishedAt) : null,
-          qualityTier: String(source.qualityTier),
-          excerpt: source.excerpt,
-        })),
-      );
+      const [report] = await tx
+        .select({ id: reports.id })
+        .from(reports)
+        .where(eq(reports.id, reportId))
+        .for("update")
+        .limit(1);
+      if (!report) return;
+
+      await this.syncReportSources(tx, reportId, sources);
     });
+  }
+
+  private async syncReportSources(
+    tx: Parameters<AppDb["transaction"]>[0] extends (tx: infer Transaction) => unknown
+      ? Transaction
+      : never,
+    reportId: string,
+    sources: Parameters<AnalysisRepository["replaceSources"]>[1],
+    additionalPreservedSourceIds: readonly string[] = [],
+  ): Promise<void> {
+    const revisions = await tx
+      .select({ changes: reportRevisions.changes })
+      .from(reportRevisions)
+      .where(eq(reportRevisions.reportId, reportId));
+    const uniqueSources = [...new Map(sources.map((source) => [source.id, source])).values()];
+    const currentSourceIds = uniqueSources.map((source) => source.id);
+    const preservedSourceIds = revisions.flatMap((revision) =>
+      revision.changes.flatMap((change) => change.newEvidenceSourceIds)
+    );
+    const retainedSourceIds = [
+      ...new Set([...currentSourceIds, ...preservedSourceIds, ...additionalPreservedSourceIds]),
+    ];
+
+    await tx
+      .delete(reportSources)
+      .where(
+        retainedSourceIds.length
+          ? and(
+              eq(reportSources.reportId, reportId),
+              notInArray(reportSources.sourceKey, retainedSourceIds),
+            )
+          : eq(reportSources.reportId, reportId),
+      );
+    if (!uniqueSources.length) return;
+
+    await tx.delete(reportSources).where(and(
+      eq(reportSources.reportId, reportId),
+      inArray(reportSources.sourceKey, currentSourceIds),
+    ));
+    await tx.insert(reportSources).values(
+      uniqueSources.map((source) => ({
+        reportId,
+        sourceKey: source.id,
+        title: source.title,
+        url: source.url,
+        canonicalUrl: source.url,
+        domain: source.domain,
+        publisher: source.publisher,
+        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null,
+        qualityTier: String(source.qualityTier),
+        excerpt: source.excerpt,
+      })),
+    );
   }
 
   async appendEvent(input: NewAnalysisEvent): Promise<number> {

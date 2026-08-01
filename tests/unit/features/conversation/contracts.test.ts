@@ -28,4 +28,33 @@ describe("targeted review contract", () => {
       },
     }).success).toBe(true);
   });
+
+  it("accepts evidence metadata introduced by a sources replacement", () => {
+    const schema = conversationContracts.targetedReviewSchema("sources", new Set());
+    const newSource = {
+      id: "source-new",
+      title: "新来源",
+      url: "https://example.com/new",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 2,
+      excerpt: "新证据摘要",
+    };
+
+    expect(schema.safeParse({
+      responseText: "新来源支持本次修订。",
+      replacement: {
+        module: {
+          claims: [],
+          sources: [newSource],
+          relations: [],
+          gaps: [],
+        },
+        reason: "补充新证据。",
+        newEvidenceSourceIds: [newSource.id],
+        summary: "更新来源。",
+      },
+    }).success).toBe(true);
+  });
 });
