@@ -27,7 +27,7 @@ export function AgentWorkspaceLayout({
   function updateWidth(clientX: number) {
     const bounds = container.current?.getBoundingClientRect();
     if (!bounds) return;
-    const next = Math.min(58, Math.max(28, Math.round(((clientX - bounds.left) / bounds.width) * 100)));
+    const next = Math.min(58, Math.max(20, Math.round(((clientX - bounds.left) / bounds.width) * 100)));
     pendingWidth.current = next;
     desktopGrid.current?.style.setProperty("grid-template-columns", `${next}fr 13px ${100 - next}fr`);
   }
@@ -36,7 +36,7 @@ export function AgentWorkspaceLayout({
     const next = event.key === "ArrowLeft" ? leftWidth - 2 : event.key === "ArrowRight" ? leftWidth + 2 : undefined;
     if (next === undefined) return;
     event.preventDefault();
-    setLeftWidth(Math.min(58, Math.max(28, next)));
+    setLeftWidth(Math.min(58, Math.max(20, next)));
   }
 
   function startResize(event: PointerEvent<HTMLDivElement>) {
@@ -56,7 +56,7 @@ export function AgentWorkspaceLayout({
         <button type="button" role="tab" aria-selected={mobileView === "findings"} className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mobileView === "findings" ? "bg-forest-soft text-primary" : "text-ink-faint"}`} onClick={() => setMobileView("findings")}>当前发现</button>
       </div><div className="h-[calc(100%_-_3.5rem)] min-h-0">{mobileView === "conversation" ? conversation : findings}</div></> : <div ref={desktopGrid} className="grid h-full min-h-0" style={{ gridTemplateColumns: `${leftWidth}fr 13px ${100 - leftWidth}fr` }}>
         <div className="min-w-0 min-h-0 overflow-hidden px-6 py-5">{conversation}</div>
-        <div role="separator" tabIndex={0} aria-label="调整对话与发现区域宽度" aria-orientation="vertical" aria-valuemin={28} aria-valuemax={58} aria-valuenow={leftWidth} className="group relative cursor-col-resize outline-none" onKeyDown={resizeWithKeyboard} onPointerDown={startResize} onPointerMove={(event) => event.currentTarget.hasPointerCapture(event.pointerId) && updateWidth(event.clientX)} onPointerUp={finishResize} onPointerCancel={finishResize}>
+        <div role="separator" tabIndex={0} aria-label="调整对话与发现区域宽度" aria-orientation="vertical" aria-valuemin={20} aria-valuemax={58} aria-valuenow={leftWidth} className="group relative cursor-col-resize outline-none" onKeyDown={resizeWithKeyboard} onPointerDown={startResize} onPointerMove={(event) => event.currentTarget.hasPointerCapture(event.pointerId) && updateWidth(event.clientX)} onPointerUp={finishResize} onPointerCancel={finishResize}>
           <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition group-hover:w-0.5 group-hover:bg-secondary group-focus-visible:w-0.5 group-focus-visible:bg-secondary" />
         </div>
         <div className="min-w-0 min-h-0 overflow-y-auto overscroll-contain px-6 py-5">{findings}</div>
