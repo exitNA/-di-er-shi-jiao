@@ -11,7 +11,7 @@ export function AppNavigation({ username }: { username?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-paper/80 backdrop-blur-xl">
-      <div className="mx-auto flex h-[4.5rem] max-w-5xl items-center justify-between px-4 sm:px-6">
+      <div className="mx-auto flex h-[4.5rem] max-w-7xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2.5 rounded-full pr-2 transition-opacity hover:opacity-75"><LogoMark size={30} /><span className="font-display text-lg font-semibold tracking-tight">第二视角</span></Link>
         <nav className="flex items-center gap-1 sm:gap-2" aria-label="主导航">
           <Link href="/" className="rounded-full px-3 py-2 text-sm font-medium transition hover:bg-forest-soft">首页</Link><Link href="/history" className="rounded-full px-3 py-2 text-sm font-medium transition hover:bg-forest-soft">思考档案</Link>
