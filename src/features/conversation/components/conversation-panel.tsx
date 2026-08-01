@@ -127,7 +127,7 @@ export function ConversationPanel({
       ) : null}
 
       {statusText ? <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">{statusText}</p> : null}
-      <form className="shrink-0 flex items-end gap-2 rounded-2xl border border-border bg-white px-3 py-2 shadow-sm" onSubmit={onSubmit}>
+      <form className="mt-auto shrink-0 flex items-end gap-2 rounded-2xl border border-border bg-white px-3 py-2 shadow-sm" onSubmit={onSubmit}>
         <label className="sr-only" htmlFor="challenge-content">继续追问</label>
         <Textarea
           id="challenge-content"

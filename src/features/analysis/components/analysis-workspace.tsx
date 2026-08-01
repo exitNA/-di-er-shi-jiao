@@ -33,7 +33,7 @@ export function AnalysisWorkspace({
 }: {
   initialSnapshot: AnalysisSnapshot;
 }) {
-  const { snapshot, connectionState, retryModule, refreshSnapshot } =
+  const { snapshot, retryModule, refreshSnapshot } =
     useAnalysisStream(initialSnapshot.jobId, initialSnapshot);
   const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
   const firstModuleEventJobId = useRef<string | null>(null);
@@ -62,12 +62,6 @@ export function AnalysisWorkspace({
     const target = firstAvailableFindingTarget(snapshot.modules);
     if (target) setSelectedTarget(target);
   }, [selectedTarget, snapshot.modules]);
-  const connectionText = {
-    connecting: "正在连接实时更新",
-    connected: "实时更新已连接",
-    polling: "实时连接暂不可用，正在定时刷新",
-    closed: "更新已结束",
-  }[connectionState];
   const overview = snapshot.modules.overview;
   const argument = snapshot.modules.argument;
   const perspectives = snapshot.modules.perspectives;
@@ -75,13 +69,8 @@ export function AnalysisWorkspace({
   const risks = snapshot.modules.risks;
   const reflection = snapshot.modules.reflection;
   return (
-    <main className="h-[calc(100dvh-4.5rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 flex-col">
-        <header className="mb-6 flex items-end justify-between gap-4">
-          <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 工作台</p><h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">与第二视角一起推理</h1></div>
-          <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
-        </header>
-        <div className="min-h-0 flex-1"><AgentWorkspaceLayout
+    <main className="h-[calc(100dvh-4.5rem)] overflow-hidden">
+      <AgentWorkspaceLayout
           conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
           findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
           <ReportModule
@@ -159,8 +148,7 @@ export function AnalysisWorkspace({
             ) : undefined}
           </ReportModule>
           <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section></>}
-        /></div>
-      </div>
+      />
     </main>
   );
 }
