@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { FontPreconnect } from "./font-preconnect";
 
 import "./globals.css";
 
@@ -14,7 +13,6 @@ export default function RootLayout({
 }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <FontPreconnect />
       <body>{children}</body>
     </html>
   );
