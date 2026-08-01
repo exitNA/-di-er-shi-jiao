@@ -15,3 +15,15 @@ it("submits logout directly from the account menu", async () => {
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
+
+it("closes the account menu when clicking outside it", async () => {
+  const user = userEvent.setup();
+  render(<AppNavigation username="tester" />);
+
+  await user.click(screen.getByRole("button", { name: "打开账户菜单" }));
+  expect(screen.getByRole("link", { name: "思考档案" })).toBeInTheDocument();
+
+  await user.click(document.body);
+
+  expect(screen.queryByRole("link", { name: "思考档案" })).not.toBeInTheDocument();
+});
