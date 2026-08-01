@@ -19,6 +19,7 @@ it("opens login and switches to registration", async () => {
   vi.stubGlobal("fetch", fetchMock);
   render(<AuthDialog />);
 
+  expect(screen.getByRole("button", { name: "登录" })).toHaveClass("cursor-pointer");
   await user.click(screen.getByRole("button", { name: "登录" }));
   expect(fetchMock).toHaveBeenCalledWith(
     "/api/auth/diagnostics",

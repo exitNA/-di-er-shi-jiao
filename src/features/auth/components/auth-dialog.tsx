@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { AuthForm } from "./auth-form";
 
 type AuthMode = "login" | "register";
@@ -66,16 +67,17 @@ export function AuthDialog() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <button
+      <Button
         type="button"
+        size="sm"
         onClick={() => {
           setOpen(true);
           recordEvent("login_clicked");
         }}
-        className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white"
+        className="cursor-pointer rounded-full"
       >
         登录
-      </button>
+      </Button>
       <DialogContent className="max-w-md bg-paper">
         <DialogHeader>
           <DialogTitle>{registering ? "创建账号" : "登录"}</DialogTitle>
