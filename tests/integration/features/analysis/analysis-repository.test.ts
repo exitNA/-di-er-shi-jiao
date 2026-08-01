@@ -103,7 +103,9 @@ describe("PostgresAnalysisRepository", () => {
 
     const ownerSnapshot = await repository.getOwnedSnapshot(owner, input.jobId);
     await expect(repository.getOwnedSnapshot(await createUser(), input.jobId)).resolves.toBeNull();
-    expect(ownerSnapshot?.messages).toHaveLength(1);
+    expect(ownerSnapshot?.messages).toEqual([
+      expect.objectContaining({ idempotencyKey: "challenge-1" }),
+    ]);
   });
 
   it("returns the original challenge message for the same idempotency key", async () => {

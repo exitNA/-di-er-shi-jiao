@@ -162,6 +162,7 @@ export const conversationMessageSchema = z
     target: reportItemTargetSchema,
     content: z.string().min(1),
     status: conversationMessageStatusSchema,
+    idempotencyKey: z.string().min(1).nullable(),
     createdAt: z.string().datetime(),
   })
   .strict();

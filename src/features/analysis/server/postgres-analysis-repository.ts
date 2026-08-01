@@ -705,6 +705,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
           target: message.target,
           content: message.content,
           status: message.status as ConversationMessage["status"],
+          idempotencyKey: message.idempotencyKey,
           createdAt: message.createdAt.toISOString(),
         })),
         revisions: revisions.map((revision) => ({

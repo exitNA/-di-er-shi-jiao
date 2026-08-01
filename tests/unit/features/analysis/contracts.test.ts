@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   argumentModuleSchema,
   baselineDraftSchema,
+  conversationMessageSchema,
   externalSourceSchema,
   reportItemTargetSchema,
   resolveReportItemTarget,
@@ -51,6 +52,29 @@ const baselineDraft = {
 };
 
 describe("analysis report contracts", () => {
+  it("represents durable challenge keys without inventing one for agent messages", () => {
+    const message = {
+      id: "11111111-1111-4111-8111-111111111111",
+      reportId: "22222222-2222-4222-8222-222222222222",
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "重新核对这项风险。",
+      status: "recoverable",
+      createdAt: "2026-08-01T01:00:00.000Z",
+    };
+
+    expect(conversationMessageSchema.parse({
+      ...message,
+      role: "user",
+      idempotencyKey: "challenge-owned",
+    })).toMatchObject({ idempotencyKey: "challenge-owned" });
+    expect(conversationMessageSchema.parse({
+      ...message,
+      role: "agent",
+      status: "completed",
+      idempotencyKey: null,
+    })).toMatchObject({ idempotencyKey: null });
+  });
+
   it("rejects an untraced critical statement", () => {
     expect(() =>
       traceableStatementSchema.parse({
