@@ -93,7 +93,7 @@ export function RevisionHistory({
           )}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-ink-faint">报告尚无修订。</p>
+        <p className="mt-4 text-sm text-ink-faint">还没有修订记录。</p>
       )}
     </section>
   );

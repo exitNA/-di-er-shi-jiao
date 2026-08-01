@@ -42,10 +42,10 @@ it("submits the selected report target and exposes the pending state", async () 
   );
 
   await userEvent.type(
-    screen.getByRole("textbox", { name: "质疑内容" }),
+    screen.getByRole("textbox", { name: "继续追问" }),
     "这项风险误读了原文。",
   );
-  await userEvent.click(screen.getByRole("button", { name: "提交质疑" }));
+  await userEvent.click(screen.getByRole("button", { name: "发送追问" }));
 
   expect(screen.getByText("质疑处理中…")).toBeInTheDocument();
   expect(fetchMock).toHaveBeenCalledOnce();
@@ -91,10 +91,10 @@ it("retries a failed submission with the same idempotency key", async () => {
   );
 
   await userEvent.type(
-    screen.getByRole("textbox", { name: "质疑内容" }),
+    screen.getByRole("textbox", { name: "继续追问" }),
     "请重新核对。",
   );
-  await userEvent.click(screen.getByRole("button", { name: "提交质疑" }));
+  await userEvent.click(screen.getByRole("button", { name: "发送追问" }));
   expect(await screen.findByText("质疑提交失败，请重试。")).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "重试质疑" }));
@@ -128,10 +128,10 @@ it("retries the durable challenge when snapshot refresh fails", async () => {
   );
 
   await userEvent.type(
-    screen.getByRole("textbox", { name: "质疑内容" }),
+    screen.getByRole("textbox", { name: "继续追问" }),
     "请重新核对。",
   );
-  await userEvent.click(screen.getByRole("button", { name: "提交质疑" }));
+  await userEvent.click(screen.getByRole("button", { name: "发送追问" }));
 
   expect(await screen.findByText("质疑提交失败，请重试。")).toBeInTheDocument();
   expect(screen.queryByText("质疑已提交，等待报告更新。")).not.toBeInTheDocument();

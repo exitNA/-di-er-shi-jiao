@@ -74,12 +74,7 @@ export function AnalysisForm({ content: controlledContent, onContentChange, comp
         rows={compact ? 3 : 10}
         placeholder={compact ? "输入你想分析的内容（Shift + Enter 换行）" : undefined}
         className={compact ? "min-h-40 w-full resize-none bg-transparent px-4 py-3 text-base leading-7 outline-none placeholder:text-ink-faint/70" : "w-full rounded-lg border border-neutral-300 bg-white p-4 leading-7"}
-        aria-describedby="analysis-content-help analysis-content-count"
       />
-      <div className={compact ? "flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-sm text-ink-faint" : "flex flex-wrap items-center justify-between gap-2 px-2 text-sm text-neutral-600"}>
-        <p id="analysis-content-help">支持 1–20,000 个字符，请粘贴需要核查的完整文本。</p>
-        <output id="analysis-content-count" aria-live="polite">{content.length.toLocaleString("en-US")} / 20,000</output>
-      </div>
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       <button
         type="submit"

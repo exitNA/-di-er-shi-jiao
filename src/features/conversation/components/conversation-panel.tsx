@@ -48,7 +48,7 @@ export function ConversationPanel({
                 ? "质疑已提交，等待报告更新。"
                 : messages.length
                   ? "对话已更新。"
-                  : "选择报告条目后可发起质疑。";
+                  : "选择一条发现后继续追问。";
 
   async function submit(submission: Submission) {
     setRequestState("submitting");
@@ -95,12 +95,12 @@ export function ConversationPanel({
       aria-labelledby="conversation-panel-heading"
     >
       <h3 id="conversation-panel-heading" className="font-display text-2xl font-semibold">
-        报告质疑
+        对话
       </h3>
       <p className="mt-2 text-sm leading-6 text-ink-faint">
         {selectedTarget
-          ? `当前条目：${reportTargetLabel(selectedTarget)}`
-          : "请先从报告中选择要质疑的条目。"}
+          ? `正在讨论：${reportTargetLabel(selectedTarget)}`
+          : "从右侧选择一条发现，开始和 Agent 一起推理。"}
       </p>
 
       {messages.length ? (
@@ -137,7 +137,7 @@ export function ConversationPanel({
 
       <form className="mt-5 space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm font-medium" htmlFor="challenge-content">
-          质疑内容
+          继续追问
         </label>
         <Textarea
           id="challenge-content"
@@ -154,7 +154,7 @@ export function ConversationPanel({
               !selectedTarget || !draft.trim() || requestState === "submitting"
             }
           >
-            提交质疑
+            发送追问
           </Button>
           {requestState === "failed" && lastSubmission ? (
             <Button

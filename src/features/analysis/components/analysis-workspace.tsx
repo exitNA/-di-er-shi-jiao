@@ -1,6 +1,6 @@
 "use client";
 
-import { Compass, Radio } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ArgumentModule } from "./argument-module";
@@ -24,6 +24,7 @@ import {
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
 import { RevisionHistory } from "@/features/conversation/components/revision-history";
+import { AgentWorkspaceLayout } from "./agent-workspace-layout";
 
 const disclaimer =
   "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。";
@@ -62,12 +63,12 @@ export function AnalysisWorkspace({
   }, [snapshot.jobId, snapshot.modules]);
   const progressText =
     snapshot.status === "completed"
-      ? "认知体检已完成"
+      ? "分析已更新"
       : snapshot.status === "partial"
-        ? `认知体检部分完成，已完成 ${completed} / 6 个模块`
+        ? `正在补全发现 · 已整理 ${completed} 项`
       : snapshot.status === "recoverable"
-        ? `认知体检待恢复，已完成 ${completed} / 6 个模块`
-        : `认知体检生成中，已完成 ${completed} / 6 个模块`;
+        ? "分析暂时中断，等待恢复"
+        : "第二视角正在整理线索";
   const connectionText = {
     connecting: "正在连接实时更新",
     connected: "实时更新已连接",
@@ -81,24 +82,15 @@ export function AnalysisWorkspace({
   const risks = snapshot.modules.risks;
   const reflection = snapshot.modules.reflection;
   return (
-    <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-10">
-      <div className="mx-auto w-full max-w-5xl">
-        <header>
-          <div className="flex items-start gap-3">
-            <span className="mt-1 grid size-9 place-items-center rounded-2xl bg-mist text-primary"><Compass size={19} aria-hidden="true" /></span>
-            <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 分析工作台</p>
-              <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">认知体检报告</h1></div>
-          </div>
+    <main className="min-h-[calc(100vh-5rem)] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[1440px]">
+        <header className="mb-6 flex items-end justify-between gap-4">
+          <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 工作台</p><h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">与第二视角一起推理</h1></div>
+          <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
         </header>
-
-        <div className="mt-8 overflow-hidden rounded-[1.75rem] border border-border bg-white/75 shadow-[0_20px_45px_-35px_rgba(22,58,54,0.35)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-mist/55 px-5 py-3 text-sm"><p className="flex items-center gap-2 font-semibold text-primary"><Radio size={15} aria-hidden="true" />{progressText}</p><p className="font-mono text-xs text-ink-faint">{connectionText}</p></div>
-          <p className="px-5 py-5 leading-7 text-ink">
-            {snapshot.materialPreview}
-          </p>
-        </div>
-
-        <div className="mt-7 space-y-4 border-l border-border pl-4 sm:pl-6">
+        <AgentWorkspaceLayout
+          conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><p className="mt-4 rounded-xl bg-forest-soft/70 p-4 text-sm leading-7 text-ink">{snapshot.materialPreview}</p><div className="mt-5 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div><div className="mt-4"><RevisionHistory revisions={snapshot.revisions} modules={snapshot.modules} /></div></div>}
+          findings={<section aria-labelledby="current-findings-heading"><div className="mb-4 flex items-center justify-between"><h2 id="current-findings-heading" className="font-display text-2xl font-semibold">当前发现</h2><p className="text-xs text-ink-faint">点击任一条继续追问</p></div><div className="space-y-4">
           <ReportModule
             id="report-module-overview"
             moduleType="overview"
@@ -173,24 +165,8 @@ export function AnalysisWorkspace({
               />
             ) : undefined}
           </ReportModule>
-        </div>
-
-        <div className="mt-7 grid gap-4 lg:grid-cols-2">
-          <ConversationPanel
-            jobId={snapshot.jobId}
-            messages={snapshot.messages}
-            selectedTarget={selectedTarget}
-            onRefresh={refreshSnapshot}
-          />
-          <RevisionHistory
-            revisions={snapshot.revisions}
-            modules={snapshot.modules}
-          />
-        </div>
-
-        <p className="mt-8 rounded-2xl bg-forest-soft px-5 py-4 text-sm leading-6 text-ink-faint">
-          {disclaimer}
-        </p>
+          <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section>}
+        />
       </div>
     </main>
   );

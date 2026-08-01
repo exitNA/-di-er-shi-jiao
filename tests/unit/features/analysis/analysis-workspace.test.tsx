@@ -26,7 +26,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("renders the six fixed modules in product order with text states", () => {
+it("presents an agent workspace with current findings", () => {
   const current = snapshot({
     modules: {
       ...emptyModules(),
@@ -35,16 +35,9 @@ it("renders the six fixed modules in product order with text states", () => {
   });
   render(<AnalysisWorkspace initialSnapshot={current} />);
 
-  expect(
-    screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent),
-  ).toEqual([
-    "速览",
-    "论证骨架",
-    "多视角地图",
-    "信源对照",
-    "认知风险",
-    "思考对话",
-  ]);
+  expect(screen.getByText("与第二视角一起推理")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "当前发现" })).toBeInTheDocument();
+  expect(screen.queryByText("认知体检报告")).not.toBeInTheDocument();
   expect(screen.getByText("速览等待分析")).toBeInTheDocument();
   expect(screen.getByText("论证骨架分析中")).toBeInTheDocument();
 });
@@ -80,7 +73,7 @@ it("uses one polite status region, keeps focus and shows the fixed disclaimer", 
 
   expect(container.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
   expect(overviewModule).toHaveFocus();
-  expect(screen.getByText("认知体检已完成")).toBeInTheDocument();
+  expect(screen.getByText("分析已更新")).toBeInTheDocument();
   expect(
     screen.getByText(
       "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。",
@@ -104,10 +97,10 @@ it("challenges a risk by stable target and keeps focus when the snapshot updates
 
   await userEvent.click(screen.getByRole("button", { name: "质疑：认知风险" }));
   await userEvent.type(
-    screen.getByRole("textbox", { name: "质疑内容" }),
+    screen.getByRole("textbox", { name: "继续追问" }),
     "这项风险误读了原文。",
   );
-  const submit = screen.getByRole("button", { name: "提交质疑" });
+  const submit = screen.getByRole("button", { name: "发送追问" });
   await userEvent.click(submit);
 
   expect(screen.getByText("质疑处理中…")).toBeInTheDocument();
@@ -247,13 +240,13 @@ it("selects shared statements and source relations by stable target", async () =
 
   await userEvent.click(screen.getByRole("button", { name: "质疑：核心主张" }));
   expect(
-    screen.getByText("当前条目：速览 / 核心主张 / claim-1"),
+    screen.getByText("正在讨论：速览 / 核心主张 / claim-1"),
   ).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "质疑：信源关系" }));
   expect(
     screen.getByText(
-      "当前条目：信源对照 / 信源关系 / claim-1:source-1",
+      "正在讨论：信源对照 / 信源关系 / claim-1:source-1",
     ),
   ).toBeInTheDocument();
 });
@@ -291,7 +284,7 @@ it("targets a source gap with the gaps domain field", async () => {
   await userEvent.click(screen.getByRole("button", { name: "质疑：证据缺口" }));
 
   expect(
-    screen.getByText("当前条目：信源对照 / 证据缺口 / gap-1"),
+    screen.getByText("正在讨论：信源对照 / 证据缺口 / gap-1"),
   ).toBeInTheDocument();
 });
 
@@ -304,8 +297,8 @@ it("renders legacy snapshots without conversation arrays", () => {
     <AnalysisWorkspace initialSnapshot={legacy as AnalysisSnapshot} />,
   );
 
-  expect(screen.getByRole("heading", { name: "报告质疑" })).toBeInTheDocument();
-  expect(screen.getByText("报告尚无修订。")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "对话" })).toBeInTheDocument();
+  expect(screen.getByText("还没有修订记录。")).toBeInTheDocument();
 });
 
 function snapshot(
