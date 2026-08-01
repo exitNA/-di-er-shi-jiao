@@ -25,9 +25,19 @@ import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream
 import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
 import { RevisionHistory } from "@/features/conversation/components/revision-history";
 import { AgentWorkspaceLayout } from "./agent-workspace-layout";
+import { CurrentFindingsPanel } from "./current-findings-panel";
 
 const disclaimer =
   "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。";
+
+function AgentActivity({ modules }: { modules: AnalysisSnapshot["modules"] }) {
+  const steps = [
+    ["拆解原文观点", modules.overview.status],
+    ["核对论据与隐含假设", modules.argument.status],
+    ["寻找不同立场", modules.perspectives.status],
+  ] as const;
+  return <ol className="mt-5 space-y-3 border-l border-border pl-4">{steps.map(([label, status]) => <li key={label} className="flex items-center justify-between gap-3 text-sm"><span className="text-ink">{label}</span><span className={`shrink-0 rounded-full px-2 py-1 text-xs ${status === "completed" ? "bg-forest-soft text-primary" : status === "running" ? "bg-mist text-secondary" : "bg-neutral-100 text-ink-faint"}`}>{status === "completed" ? "已完成" : status === "running" ? "进行中" : "待处理"}</span></li>)}</ol>;
+}
 
 export function AnalysisWorkspace({
   initialSnapshot,
@@ -89,8 +99,8 @@ export function AnalysisWorkspace({
           <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
         </header>
         <AgentWorkspaceLayout
-          conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><p className="mt-4 rounded-xl bg-forest-soft/70 p-4 text-sm leading-7 text-ink">{snapshot.materialPreview}</p><div className="mt-5 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div><div className="mt-4"><RevisionHistory revisions={snapshot.revisions} modules={snapshot.modules} /></div></div>}
-          findings={<section aria-labelledby="current-findings-heading"><div className="mb-4 flex items-center justify-between"><h2 id="current-findings-heading" className="font-display text-2xl font-semibold">当前发现</h2><p className="text-xs text-ink-faint">点击任一条继续追问</p></div><div className="space-y-4">
+          conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><p className="mt-4 rounded-xl bg-forest-soft/70 p-4 text-sm leading-7 text-ink">{snapshot.materialPreview}</p><AgentActivity modules={snapshot.modules} /><div className="mt-5 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div><div className="mt-4"><RevisionHistory revisions={snapshot.revisions} modules={snapshot.modules} /></div></div>}
+          findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
           <ReportModule
             id="report-module-overview"
             moduleType="overview"
@@ -165,7 +175,7 @@ export function AnalysisWorkspace({
               />
             ) : undefined}
           </ReportModule>
-          <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section>}
+          <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section></>}
         />
       </div>
     </main>
