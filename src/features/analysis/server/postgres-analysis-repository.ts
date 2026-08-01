@@ -32,6 +32,7 @@ import {
 import type {
   AnalysisEvent,
   AnalysisRepository,
+  CompleteRevisionResponse,
   CompleteRevision,
   ExecutionJob,
   FinishExpertRun,
@@ -298,6 +299,76 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
     });
   }
 
+  async startRevision(input: RecoverRevision): Promise<boolean> {
+    return this.db.transaction((tx) =>
+      this.transitionRevisionMessage(
+        tx,
+        input,
+        ["queued", "recoverable"],
+        "running",
+      ),
+    );
+  }
+
+  async completeRevisionResponse(input: CompleteRevisionResponse): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [message] = await tx
+        .update(conversationMessages)
+        .set({ status: "completed", updatedAt: input.now })
+        .where(
+          and(
+            eq(conversationMessages.id, input.messageId),
+            eq(conversationMessages.reportId, input.reportId),
+            eq(conversationMessages.userId, input.userId),
+            eq(conversationMessages.role, "user"),
+            eq(conversationMessages.status, "running"),
+            exists(
+              tx
+                .select({ reportId: reports.id })
+                .from(reports)
+                .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+                .where(
+                  and(
+                    eq(reports.id, input.reportId),
+                    eq(reports.jobId, input.jobId),
+                    eq(reports.userId, input.userId),
+                    eq(analysisJobs.userId, input.userId),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ target: conversationMessages.target });
+      if (!message) return false;
+
+      const [agentMessage] = await tx
+        .insert(conversationMessages)
+        .values({
+          reportId: input.reportId,
+          userId: input.userId,
+          role: "agent",
+          target: message.target,
+          content: input.agentContent,
+          status: "completed",
+          createdAt: input.now,
+          updatedAt: input.now,
+        })
+        .returning({ id: conversationMessages.id });
+      await tx.insert(analysisEvents).values({
+        jobId: input.jobId,
+        userId: input.userId,
+        eventType: "conversation.updated",
+        payload: {
+          messageId: input.messageId,
+          agentMessageId: agentMessage.id,
+          status: "completed",
+        },
+        createdAt: input.now,
+      });
+      return true;
+    });
+  }
+
   async recoverRevision(input: RecoverRevision): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const updated = await this.markRevisionRecoverable(tx, input);
@@ -311,16 +382,32 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       : never,
     input: RecoverRevision,
   ): Promise<boolean> {
+    return this.transitionRevisionMessage(
+      tx,
+      input,
+      ["queued", "running"],
+      "recoverable",
+    );
+  }
+
+  private async transitionRevisionMessage(
+    tx: Parameters<AppDb["transaction"]>[0] extends (tx: infer Transaction) => unknown
+      ? Transaction
+      : never,
+    input: RecoverRevision,
+    from: Array<ConversationMessage["status"]>,
+    to: ConversationMessage["status"],
+  ): Promise<boolean> {
     const [message] = await tx
       .update(conversationMessages)
-      .set({ status: "recoverable", updatedAt: input.now })
+      .set({ status: to, updatedAt: input.now })
       .where(
         and(
           eq(conversationMessages.id, input.messageId),
           eq(conversationMessages.reportId, input.reportId),
           eq(conversationMessages.userId, input.userId),
           eq(conversationMessages.role, "user"),
-          inArray(conversationMessages.status, ["queued", "running"]),
+          inArray(conversationMessages.status, from),
           exists(
             tx
               .select({ reportId: reports.id })
@@ -344,7 +431,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       jobId: input.jobId,
       userId: input.userId,
       eventType: "conversation.updated",
-      payload: { messageId: input.messageId, status: "recoverable" },
+      payload: { messageId: input.messageId, status: to },
       createdAt: input.now,
     });
     return true;

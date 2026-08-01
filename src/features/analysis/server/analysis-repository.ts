@@ -98,6 +98,10 @@ export type RecoverRevision = {
   now: Date;
 };
 
+export type CompleteRevisionResponse = RecoverRevision & {
+  agentContent: string;
+};
+
 export type StartExpertRun = {
   id: string;
   jobId: string;
@@ -142,6 +146,8 @@ export type AnalysisEvent = Omit<NewAnalysisEvent, "now"> & {
 export interface AnalysisRepository {
   createAnalysis(input: NewAnalysis): Promise<{ jobId: string; created: boolean }>;
   createChallenge(input: NewChallenge): Promise<{ messageId: string; created: boolean } | null>;
+  startRevision(input: RecoverRevision): Promise<boolean>;
+  completeRevisionResponse(input: CompleteRevisionResponse): Promise<boolean>;
   completeRevision(input: CompleteRevision): Promise<{ completed: boolean; revisionId?: string }>;
   recoverRevision(input: RecoverRevision): Promise<boolean>;
   getJobForExecution(jobId: string): Promise<ExecutionJob | null>;

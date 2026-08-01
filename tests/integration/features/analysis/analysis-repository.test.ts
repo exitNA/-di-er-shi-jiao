@@ -100,6 +100,77 @@ describe("PostgresAnalysisRepository", () => {
     expect(second).toEqual({ messageId: first.messageId, created: false });
   });
 
+  it("atomically acquires one revision worker and allows recoverable work to resume", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-lock",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const acquire = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      now,
+    };
+
+    const acquired = await Promise.all([
+      repository.startRevision(acquire),
+      repository.startRevision(acquire),
+    ]);
+
+    expect(acquired.sort()).toEqual([false, true]);
+    await expect(repository.recoverRevision(acquire)).resolves.toBe(true);
+    await expect(repository.startRevision(acquire)).resolves.toBe(true);
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      messages: [expect.objectContaining({ status: "running" })],
+    });
+  });
+
+  it("atomically completes an Agent response without changing the report", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-response-only",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const ownership = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      now,
+    };
+    await repository.startRevision(ownership);
+
+    await expect(repository.completeRevisionResponse({
+      ...ownership,
+      agentContent: "复核后无需修订。",
+    })).resolves.toBe(true);
+
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      currentVersion: 0,
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: "user", status: "completed" }),
+        expect.objectContaining({ role: "agent", content: "复核后无需修订。" }),
+      ]),
+      revisions: [],
+    });
+  });
+
   it("does not overwrite a newer report revision with an outdated version", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);

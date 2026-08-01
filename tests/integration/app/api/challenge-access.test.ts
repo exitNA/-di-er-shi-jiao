@@ -55,6 +55,18 @@ describe("challenge route access", () => {
     expect(response.status).toBe(404);
   });
 
+  it("rejects a body jobId instead of letting it override the pathname", async () => {
+    const response = await POST(request({
+      jobId: "99999999-9999-4999-8999-999999999999",
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-1",
+    }), context());
+
+    expect(response.status).toBe(400);
+    expect(submitChallenge).not.toHaveBeenCalled();
+  });
+
   it("rejects an untrusted origin before authentication or persistence", async () => {
     mocks.assertTrustedMutation.mockReturnValue(
       Response.json({ error: "请求来源无效" }, { status: 403 }),

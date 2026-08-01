@@ -42,45 +42,32 @@ export async function submitChallenge(
   });
   if (!challenge) return { ok: false, code: "NOT_FOUND" };
 
-  if (!challenge.created) {
-    const latest = await repository.getOwnedSnapshot(input.userId, input.jobId);
-    const message = latest?.messages.find((candidate) => candidate.id === challenge.messageId);
-    const revision = latest?.revisions.find(
-      (candidate) => candidate.triggeringMessageId === challenge.messageId,
-    );
-    return {
-      ok: true,
-      messageId: challenge.messageId,
-      ...(revision ? { revisionId: revision.id } : {}),
-      created: false,
-      status: message?.status ?? "queued",
-    };
-  }
-
-  await repository.appendEvent({
-    jobId: input.jobId,
-    userId: input.userId,
-    eventType: "conversation.updated",
-    payload: { messageId: challenge.messageId, status: "queued" },
-    now: now(),
-  });
-
-  try {
-    await recordProductEvent({
-      userId: input.userId,
+  if (challenge.created) {
+    await repository.appendEvent({
       jobId: input.jobId,
-      eventName: "report_item_challenged",
-      messageId: challenge.messageId,
-      moduleType: input.target.moduleType,
+      userId: input.userId,
+      eventType: "conversation.updated",
+      payload: { messageId: challenge.messageId, status: "queued" },
       now: now(),
     });
-  } catch {
-    logger.error("Product event recording failed", {
-      jobId: input.jobId,
-      messageId: challenge.messageId,
-      eventName: "report_item_challenged",
-      errorCode: "PRODUCT_EVENT_FAILED",
-    });
+
+    try {
+      await recordProductEvent({
+        userId: input.userId,
+        jobId: input.jobId,
+        eventName: "report_item_challenged",
+        messageId: challenge.messageId,
+        moduleType: input.target.moduleType,
+        now: now(),
+      });
+    } catch {
+      logger.error("Product event recording failed", {
+        jobId: input.jobId,
+        messageId: challenge.messageId,
+        eventName: "report_item_challenged",
+        errorCode: "PRODUCT_EVENT_FAILED",
+      });
+    }
   }
 
   const result = await orchestrator.run({
@@ -93,7 +80,7 @@ export async function submitChallenge(
     ok: true,
     messageId: challenge.messageId,
     ...(result.status === "completed" ? { revisionId: result.revisionId } : {}),
-    created: true,
+    created: challenge.created,
     status: result.status,
   };
 }

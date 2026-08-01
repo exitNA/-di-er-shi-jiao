@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { getLogger } from "@logtape/logtape";
 
 import {
@@ -56,21 +55,31 @@ export class RevisionOrchestrator {
       (revision) => revision.triggeringMessageId === input.messageId,
     );
     if (existing) return { status: "completed", revisionId: existing.id };
+    if (message.status === "completed") return { status: "completed" };
+
+    const acquired = await this.repository.startRevision({
+      ...input,
+      reportId: snapshot.reportId,
+      now: this.now(),
+    });
+    if (!acquired) {
+      const latest = await this.repository.getOwnedSnapshot(input.userId, input.jobId);
+      const revision = latest?.revisions.find(
+        (candidate) => candidate.triggeringMessageId === input.messageId,
+      );
+      if (revision) return { status: "completed", revisionId: revision.id };
+      const status = latest?.messages.find(
+        (candidate) => candidate.id === input.messageId,
+      )?.status;
+      return status === "completed"
+        ? { status: "completed" }
+        : status === "running"
+          ? { status: "running" }
+          : { status: "recoverable" };
+    }
 
     const current = snapshot.modules[message.target.moduleType];
     if (!current.payload) return this.recover(input, snapshot.reportId);
-
-    const runId = randomUUID();
-    const started = Date.now();
-    await this.repository.startExpertRun({
-      id: runId,
-      jobId: input.jobId,
-      expertType: expertType(message.target.moduleType),
-      phase: "revision",
-      attempt: current.version + 1,
-      configVersion: snapshot.configVersion,
-      now: this.now(),
-    });
 
     try {
       const review = await this.experts.reviewTarget({
@@ -80,22 +89,25 @@ export class RevisionOrchestrator {
         conversation: snapshot.messages,
         newSources: (snapshot.modules.sources.payload as SourcesModule | undefined)?.sources,
       });
-      const replacement = review.value.replacement ?? {
-        module: current.payload as BaselineDraft[ReportModuleType],
-        reason: "复核后现有内容仍受当前证据支持。",
-        newEvidenceSourceIds: [],
-        summary: "保留目标条目的当前结论。",
-      };
+      const replacement = review.value.replacement;
+      if (!replacement) {
+        const completed = await this.repository.completeRevisionResponse({
+          ...input,
+          reportId: snapshot.reportId,
+          agentContent: review.value.responseText,
+          now: this.now(),
+        });
+        if (!completed) return this.recover(input, snapshot.reportId);
+        logger.info("Report challenge completed", {
+          jobId: input.jobId,
+          messageId: input.messageId,
+          moduleType: message.target.moduleType,
+          status: "completed",
+          revised: false,
+        });
+        return { status: "completed" };
+      }
       const parsedModule = moduleSchemas[message.target.moduleType].parse(replacement.module);
-      await this.repository.finishExpertRun({
-        id: runId,
-        status: "completed",
-        inputTokens: review.usage.inputTokens,
-        outputTokens: review.usage.outputTokens,
-        estimatedCostUsd: "0",
-        latencyMs: review.usage.latencyMs || Date.now() - started,
-        now: this.now(),
-      });
       const completed = await this.repository.completeRevision({
         jobId: input.jobId,
         reportId: snapshot.reportId,
@@ -137,16 +149,6 @@ export class RevisionOrchestrator {
       return { status: "completed", revisionId: completed.revisionId };
     } catch (error) {
       const code = errorCode(error);
-      await this.repository.finishExpertRun({
-        id: runId,
-        status: "failed",
-        inputTokens: 0,
-        outputTokens: 0,
-        estimatedCostUsd: "0",
-        latencyMs: Date.now() - started,
-        errorCode: code,
-        now: this.now(),
-      });
       logger.error("Report challenge failed", {
         jobId: input.jobId,
         messageId: input.messageId,
@@ -178,17 +180,6 @@ export class RevisionOrchestrator {
         errorCode: "PRODUCT_EVENT_FAILED",
       });
     }
-  }
-}
-
-function expertType(moduleType: ReportModuleType) {
-  switch (moduleType) {
-    case "argument": return "argument" as const;
-    case "sources": return "sources" as const;
-    case "perspectives": return "perspectives" as const;
-    case "risks": return "risks" as const;
-    case "overview":
-    case "reflection": return "synthesis" as const;
   }
 }
 

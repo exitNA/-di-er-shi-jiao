@@ -26,6 +26,7 @@ export type TargetedReview = {
 };
 
 export type RevisionRunResult =
-  | { status: "completed"; revisionId: string }
+  | { status: "completed"; revisionId?: string }
+  | { status: "running" }
   | { status: "recoverable" }
   | { status: "not-found" };

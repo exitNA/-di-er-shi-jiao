@@ -93,6 +93,105 @@ describe("conversation revision flow", () => {
       expect.objectContaining({ role: "user", status: "recoverable" }),
     ]);
   });
+
+  it("resumes a recoverable challenge when the same idempotency key is replayed", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    const reviewTarget = experts.reviewTarget.bind(experts);
+    const interruption = Object.assign(new Error("TASK_INTERRUPTED"), {
+      code: "TASK_INTERRUPTED",
+    });
+    vi.spyOn(experts, "reviewTarget")
+      .mockRejectedValueOnce(interruption)
+      .mockImplementation(reviewTarget);
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+    const input = {
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-recovery",
+    };
+
+    const interrupted = await submitChallenge(input, repository, orchestrator, () => now, recorder);
+    const recovered = await submitChallenge(input, repository, orchestrator, () => now, recorder);
+
+    expect(interrupted).toMatchObject({ ok: true, created: true, status: "recoverable" });
+    expect(recovered).toMatchObject({ ok: true, created: false, status: "completed" });
+    const snapshot = await repository.getOwnedSnapshot(fixture.userId, fixture.jobId);
+    expect(snapshot).toMatchObject({ currentVersion: 1 });
+    expect(snapshot?.messages).toHaveLength(2);
+    expect(snapshot?.revisions).toHaveLength(1);
+  });
+
+  it("lets only one concurrent idempotent replay acquire revision work", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 30 } });
+    const review = vi.spyOn(experts, "reviewTarget");
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+    const input = {
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-concurrent",
+    };
+
+    const results = await Promise.all([
+      submitChallenge(input, repository, orchestrator, () => now, recorder),
+      submitChallenge(input, repository, orchestrator, () => now, recorder),
+    ]);
+
+    expect(results.map((result) => result.ok ? result.status : "not-found").sort()).toEqual([
+      "completed",
+      "running",
+    ]);
+    expect(review).toHaveBeenCalledOnce();
+    const snapshot = await repository.getOwnedSnapshot(fixture.userId, fixture.jobId);
+    expect(snapshot?.messages).toHaveLength(2);
+    expect(snapshot?.revisions).toHaveLength(1);
+  });
+
+  it("persists an Agent response without revising the report when replacement is absent", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    vi.spyOn(experts, "reviewTarget").mockResolvedValueOnce({
+      value: { responseText: "复核后，当前风险判断仍受原文支持，无需修订。" },
+      usage: { inputTokens: 1, outputTokens: 1, latencyMs: 1 },
+    });
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "请重新核对这项风险。",
+      idempotencyKey: "challenge-response-only",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toMatchObject({ ok: true, status: "completed" });
+    expect(result.ok && result.revisionId).toBeUndefined();
+    const snapshot = await repository.getOwnedSnapshot(fixture.userId, fixture.jobId);
+    expect(snapshot).toMatchObject({
+      currentVersion: 0,
+      modules: { risks: { status: "completed", version: 1 } },
+      revisions: [],
+    });
+    expect(snapshot?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", status: "completed" }),
+      expect.objectContaining({
+        role: "agent",
+        status: "completed",
+        content: "复核后，当前风险判断仍受原文支持，无需修订。",
+      }),
+    ]));
+    expect(await db.select().from(productEvents)).toEqual([
+      expect.objectContaining({ eventName: "report_item_challenged" }),
+    ]);
+    expect(await db.select().from(analysisEvents)).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "report.revised" }),
+    ]));
+  });
 });
 
 const recorder = (input: Parameters<typeof recordProductEvent>[1]) => recordProductEvent(db, input);

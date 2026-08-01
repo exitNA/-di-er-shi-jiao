@@ -6,7 +6,6 @@ import { assertTrustedMutation } from "@/features/auth/server/http";
 import { getContainer } from "@/server/container";
 
 const requestSchema = z.object({
-  jobId: z.string().uuid(),
   target: reportItemTargetSchema,
   content: z.string().trim().min(1).max(5_000),
   idempotencyKey: z.string().min(1).max(200),
@@ -22,16 +21,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
 
   const { jobId } = await context.params;
-  const parsed = requestSchema.safeParse({
-    jobId,
-    ...await request.json().catch(() => null),
-  });
+  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "请求无效" }, { status: 400 });
   }
 
   const result = await getContainer().submitChallenge({
     ...parsed.data,
+    jobId,
     userId: user.id,
   });
   if (!result.ok) {
