@@ -20,6 +20,12 @@ import { FakeExpertSuite } from "@/server/agents/fake-expert-suite";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
 import { recordProductEvent } from "./observability/product-events";
+import { RevisionOrchestrator } from "@/features/conversation/server/revision-orchestrator";
+import {
+  submitChallenge,
+  type SubmitChallengeInput,
+  type SubmitChallengeResult,
+} from "@/features/conversation/server/submit-challenge";
 
 export type ApplicationContainer = {
   db: AppDb;
@@ -27,7 +33,9 @@ export type ApplicationContainer = {
   analysisRepository: AnalysisRepository;
   analysisDispatcher: AnalysisDispatcher;
   baselineOrchestrator: BaselineOrchestrator;
+  revisionOrchestrator: RevisionOrchestrator;
   submitAnalysis(input: SubmitAnalysisInput): Promise<SubmitAnalysisResult>;
+  submitChallenge(input: SubmitChallengeInput): Promise<SubmitChallengeResult>;
 };
 
 let container: ApplicationContainer | undefined;
@@ -63,6 +71,12 @@ export function getContainer(): ApplicationContainer {
       now,
       productEventRecorder,
     );
+    const revisionOrchestrator = new RevisionOrchestrator(
+      experts,
+      analysisRepository,
+      now,
+      productEventRecorder,
+    );
     const analysisDispatcher =
       env.ANALYSIS_RUNTIME === "in-process"
         ? new InProcessAnalysisDispatcher(baselineOrchestrator)
@@ -77,11 +91,20 @@ export function getContainer(): ApplicationContainer {
       analysisRepository,
       analysisDispatcher,
       baselineOrchestrator,
+      revisionOrchestrator,
       submitAnalysis: (input) =>
         submitAnalysis(
           input,
           analysisRepository,
           analysisDispatcher,
+          now,
+          productEventRecorder,
+        ),
+      submitChallenge: (input) =>
+        submitChallenge(
+          input,
+          analysisRepository,
+          revisionOrchestrator,
           now,
           productEventRecorder,
         ),

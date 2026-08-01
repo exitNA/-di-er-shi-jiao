@@ -14,6 +14,8 @@ export const productEventNames = [
   "first_module_shown",
   "baseline_report_completed",
   "report_degraded",
+  "report_item_challenged",
+  "report_revised",
 ] as const;
 
 export type ProductEventName = (typeof productEventNames)[number];
@@ -39,6 +41,22 @@ export type ProductEventInput =
       moduleType: ReportModuleType;
       moduleVersion: number;
       errorCode: string;
+      now?: Date;
+    }
+  | {
+      userId: string;
+      jobId: string;
+      eventName: "report_item_challenged";
+      messageId: string;
+      moduleType: ReportModuleType;
+      now?: Date;
+    }
+  | {
+      userId: string;
+      jobId: string;
+      eventName: "report_revised";
+      revisionId: string;
+      moduleType: ReportModuleType;
       now?: Date;
     };
 
@@ -163,9 +181,12 @@ function isProductEventName(value: unknown): value is ProductEventName {
 }
 
 function eventKey(input: ProductEventInput): string {
-  return input.eventName === "report_degraded"
-    ? `${input.jobId}:${input.moduleType}:${input.moduleVersion}`
-    : input.jobId;
+  switch (input.eventName) {
+    case "report_degraded": return `${input.jobId}:${input.moduleType}:${input.moduleVersion}`;
+    case "report_item_challenged": return input.messageId;
+    case "report_revised": return input.revisionId;
+    default: return input.jobId;
+  }
 }
 
 function eventProperties(
@@ -179,6 +200,9 @@ function eventProperties(
         moduleType: input.moduleType,
         errorCode: input.errorCode,
       };
+    case "report_item_challenged":
+    case "report_revised":
+      return { moduleType: input.moduleType };
     default:
       return {};
   }

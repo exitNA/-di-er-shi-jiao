@@ -18,8 +18,12 @@ import type {
   ExpertSuite,
   SynthesisInput,
 } from "./expert-suite";
+import type {
+  TargetedReview,
+  TargetedReviewInput,
+} from "@/features/conversation/domain/contracts";
 
-type ExpertName = "argument" | "perspectives" | "sources" | "risks";
+type ExpertName = "argument" | "perspectives" | "sources" | "risks" | "revision";
 
 type FakeExpertSuiteOptions = {
   delaysMs?: Partial<Record<ExpertName, number>>;
@@ -31,6 +35,7 @@ const defaultDelays: Record<ExpertName, number> = {
   perspectives: 30,
   risks: 40,
   sources: 500,
+  revision: 20,
 };
 
 const fakeUsage = { inputTokens: 0, outputTokens: 0, latencyMs: 0 };
@@ -124,6 +129,26 @@ export class FakeExpertSuite implements ExpertSuite {
 
   async reviseDraft(input: DraftRevisionInput): Promise<ExpertResult<BaselineDraft>> {
     return result(baselineDraftSchema.parse(input.draft));
+  }
+
+  async reviewTarget(input: TargetedReviewInput): Promise<ExpertResult<TargetedReview>> {
+    await this.run("revision", input);
+    const replacementModule = input.target.moduleType === "risks"
+      ? {
+          items: (input.currentModule as RisksModule).items.filter(
+            (item) => item.id !== input.target.itemId,
+          ),
+        }
+      : input.currentModule;
+    return result({
+      responseText: "复核后，这项质疑成立，报告已更新。",
+      replacement: {
+        module: replacementModule,
+        reason: "原结论超出当前材料能够支持的范围。",
+        newEvidenceSourceIds: input.newSources?.map((source) => source.id) ?? [],
+        summary: "按质疑结果更新目标条目。",
+      },
+    });
   }
 
   private async run(expert: ExpertName, input: ExpertInput): Promise<void> {

@@ -9,6 +9,10 @@ import type {
   SourcesModule,
 } from "@/features/analysis/domain/contracts";
 import type { GenerationUsage } from "@/server/ai/structured-generator";
+import type {
+  TargetedReview,
+  TargetedReviewInput,
+} from "@/features/conversation/domain/contracts";
 
 export type ExpertInput = {
   material: string;
@@ -46,4 +50,5 @@ export interface ExpertSuite {
   synthesize(input: SynthesisInput): Promise<ExpertResult<{ overview: OverviewModule; reflection: ReflectionModule }>>;
   reviewDraft(input: DraftReviewInput): Promise<ExpertResult<DraftReview>>;
   reviseDraft(input: DraftRevisionInput): Promise<ExpertResult<BaselineDraft>>;
+  reviewTarget(input: TargetedReviewInput): Promise<ExpertResult<TargetedReview>>;
 }

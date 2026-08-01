@@ -9,7 +9,8 @@ import {
   recordProductEvent,
 } from "@/server/observability/product-events";
 
-const bodySchema = z
+// Browser-owned events only; challenge and revision events are recorded by server use cases.
+const browserEventSchema = z
   .object({
     eventName: z.literal("first_module_shown"),
     jobId: z.string().uuid(),
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "请先登录" }, { status: 401 });
 
-  const parsed = bodySchema.safeParse(
+  const parsed = browserEventSchema.safeParse(
     await request.json().catch(() => null),
   );
   if (!parsed.success) {

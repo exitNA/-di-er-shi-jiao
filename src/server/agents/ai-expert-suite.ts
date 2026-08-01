@@ -11,7 +11,13 @@ import {
   type ExternalSource,
   type RisksModule,
   type SourcesModule,
+  type BaselineDraft,
+  type ReportModuleType,
 } from "@/features/analysis/domain/contracts";
+import type {
+  TargetedReview,
+  TargetedReviewInput,
+} from "@/features/conversation/domain/contracts";
 import type { StructuredGenerator } from "@/server/ai/structured-generator";
 import type { SearchClient, SearchResult } from "@/server/search/search-client";
 import type {
@@ -143,6 +149,41 @@ export class AiExpertSuite implements ExpertSuite {
       abortSignal: input.abortSignal,
     });
   }
+
+  reviewTarget(input: TargetedReviewInput): Promise<ExpertResult<TargetedReview>> {
+    return this.dependencies.generator.generate({
+      operation: "targeted-review",
+      system: synthesisSystemInstruction,
+      prompt: `${sourceMaterial(input.material)}\n\n${sourceMaterial(JSON.stringify({
+        target: input.target,
+        currentModule: input.currentModule,
+        conversation: input.conversation,
+        newSources: input.newSources ?? [],
+      }))}\n\n请回应用户对目标条目的质疑；仅在证据要求修改时返回 replacement。`,
+      schema: targetedReviewSchema(input.target.moduleType),
+      abortSignal: input.abortSignal,
+    });
+  }
+}
+
+function targetedReviewSchema(moduleType: ReportModuleType): z.ZodType<TargetedReview> {
+  const moduleSchemas: Record<ReportModuleType, z.ZodType<BaselineDraft[ReportModuleType]>> = {
+    overview: overviewModuleSchema,
+    argument: argumentModuleSchema,
+    perspectives: perspectivesModuleSchema,
+    sources: sourcesModuleSchema,
+    risks: risksModuleSchema,
+    reflection: reflectionModuleSchema,
+  };
+  return z.object({
+    responseText: z.string().min(1),
+    replacement: z.object({
+      module: moduleSchemas[moduleType],
+      reason: z.string().min(1),
+      newEvidenceSourceIds: z.array(z.string().min(1)),
+      summary: z.string().min(1),
+    }).strict().optional(),
+  }).strict();
 }
 
 function sourceQueries(material: string): string[] {
