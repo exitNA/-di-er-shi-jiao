@@ -22,7 +22,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm build && pnpm start --port 3100",
+    command: "pnpm build && NODE_ENV=production DEPLOY_RUN_PORT=3100 pnpm start",
     url: baseUrl,
     timeout: 180_000,
     env: {
