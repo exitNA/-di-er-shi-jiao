@@ -17,7 +17,7 @@ vi.mock("@/features/analysis/components/analysis-form", () => ({
 it("shows the product promise", async () => {
   render(await Home());
   expect(
-    screen.getByRole("heading", { name: /帮你弄懂复杂议题/ }),
+    screen.getByRole("heading", { name: "粘贴一段内容，看看它的第二视角。" }),
   ).toBeInTheDocument();
 });
 
@@ -35,5 +35,5 @@ it("shows branded navigation for an authenticated reader", async () => {
   );
 
   await userEvent.click(screen.getByRole("button", { name: "打开账户菜单" }));
-  expect(screen.getByText("tester")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
 });
