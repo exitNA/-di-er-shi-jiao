@@ -8,6 +8,8 @@ it("submits logout directly from the account menu", async () => {
   const user = userEvent.setup();
   render(<AppNavigation username="tester" />);
 
+  expect(screen.getByLabelText("tester 的头像")).toHaveTextContent("T");
+
   await user.click(screen.getByRole("button", { name: "打开账户菜单" }));
   await user.click(screen.getByRole("button", { name: "退出登录" }));
 
