@@ -32,6 +32,7 @@ describe("FakeExpertSuite", () => {
     expect(revised.value).toEqual(baselineDraftSchema.parse(revised.value));
     expect(revised.value.argument.claims[0]?.sourceMaterialQuote).toBe("第一句是可追溯事实。");
     expect(revised.value.sources.sources).toEqual([]);
+    expect(revised.value.risks.items[0]?.id).toBe("risk-overgeneralization");
     expect(revised.value.reflection.question).toBeTruthy();
   });
 

@@ -90,6 +90,7 @@ export class FakeExpertSuite implements ExpertSuite {
       items: quote
         ? [
             {
+              id: "risk-overgeneralization",
               type: "overgeneralization",
               sourceMaterialQuote: quote,
               explanation: "单句材料不足以支持广泛结论。",

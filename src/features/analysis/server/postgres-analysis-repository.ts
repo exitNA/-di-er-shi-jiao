@@ -7,7 +7,15 @@ import type {
   ReportModuleStatus,
   ReportModuleType,
 } from "@/features/analysis/domain/contracts";
-import { moduleTypes } from "@/features/analysis/domain/contracts";
+import {
+  argumentModuleSchema,
+  moduleTypes,
+  overviewModuleSchema,
+  perspectivesModuleSchema,
+  reflectionModuleSchema,
+  risksModuleSchema,
+  sourcesModuleSchema,
+} from "@/features/analysis/domain/contracts";
 import type { AppDb } from "@/server/db/client";
 import { isPostgresUniqueViolation } from "@/server/db/postgres-errors";
 import {
@@ -42,6 +50,22 @@ function asJobStatus(status: string): AnalysisJobStatus {
 
 function asModuleStatus(status: string): ReportModuleStatus {
   return status as ReportModuleStatus;
+}
+
+const modulePayloadSchemas = {
+  overview: overviewModuleSchema,
+  argument: argumentModuleSchema,
+  perspectives: perspectivesModuleSchema,
+  sources: sourcesModuleSchema,
+  risks: risksModuleSchema,
+  reflection: reflectionModuleSchema,
+};
+
+function hasSameTarget(
+  left: { moduleType: string; section: string; itemId: string },
+  right: { moduleType: string; section: string; itemId: string },
+): boolean {
+  return left.moduleType === right.moduleType && left.section === right.section && left.itemId === right.itemId;
 }
 
 export class PostgresAnalysisRepository implements AnalysisRepository {
@@ -171,6 +195,8 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
             eq(conversationMessages.id, input.messageId),
             eq(conversationMessages.reportId, input.reportId),
             eq(conversationMessages.userId, input.userId),
+            eq(conversationMessages.role, "user"),
+            inArray(conversationMessages.status, ["queued", "running", "recoverable"]),
             eq(reports.id, input.reportId),
             eq(reports.jobId, input.jobId),
             eq(reports.userId, input.userId),
@@ -179,6 +205,14 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         )
         .limit(1);
       if (!message) return { completed: false };
+      if (
+        input.module.moduleType !== message.target.moduleType ||
+        !input.changes.length ||
+        !input.changes.every((change) => hasSameTarget(change.target, message.target)) ||
+        !modulePayloadSchemas[input.module.moduleType].safeParse(input.module.payload).success
+      ) {
+        return { completed: false };
+      }
 
       const [report] = await tx
         .update(reports)
@@ -285,6 +319,8 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
           eq(conversationMessages.id, input.messageId),
           eq(conversationMessages.reportId, input.reportId),
           eq(conversationMessages.userId, input.userId),
+          eq(conversationMessages.role, "user"),
+          inArray(conversationMessages.status, ["queued", "running"]),
           exists(
             tx
               .select({ reportId: reports.id })

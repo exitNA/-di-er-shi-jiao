@@ -69,6 +69,15 @@ export type NewChallenge = {
   now: Date;
 };
 
+export type RevisionModuleUpdate = {
+  [ModuleType in ReportModuleType]: {
+    moduleType: ModuleType;
+    payload: BaselineDraft[ModuleType];
+    expectedVersion: number;
+    nextVersion: number;
+  };
+}[ReportModuleType];
+
 export type CompleteRevision = {
   jobId: string;
   reportId: string;
@@ -76,12 +85,7 @@ export type CompleteRevision = {
   messageId: string;
   agentContent: string;
   expectedReportVersion: number;
-  module: {
-    moduleType: ReportModuleType;
-    payload: BaselineDraft[ReportModuleType];
-    expectedVersion: number;
-    nextVersion: number;
-  };
+  module: RevisionModuleUpdate;
   changes: ReportRevisionChange[];
   now: Date;
 };

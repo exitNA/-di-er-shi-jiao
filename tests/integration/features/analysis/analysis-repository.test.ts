@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PostgresAnalysisRepository } from "@/features/analysis/server/postgres-analysis-repository";
+import type { CompleteRevision } from "@/features/analysis/server/analysis-repository";
 import { analysisEvents, reportModules, reportSources } from "@/server/db/schema/analysis";
 import { users } from "@/server/db/schema/auth";
 import { createTestDb, migrateTestDb, truncateTestDb } from "../../../helpers/database";
@@ -135,6 +136,13 @@ describe("PostgresAnalysisRepository", () => {
       ],
       now,
     });
+    const recovery = await repository.recoverRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      now,
+    });
     const stale = await repository.completeRevision({
       jobId: input.jobId,
       reportId: input.reportId,
@@ -161,12 +169,103 @@ describe("PostgresAnalysisRepository", () => {
 
     const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
     expect(first.completed).toBe(true);
+    expect(recovery).toBe(false);
     expect(stale.completed).toBe(false);
     expect(snapshot).toMatchObject({ currentVersion: 1 });
     expect(snapshot?.revisions).toHaveLength(1);
     expect(snapshot?.messages).toHaveLength(2);
     expect(snapshot?.messages.find((message) => message.role === "user")).toMatchObject({
-      status: "recoverable",
+      status: "completed",
+    });
+  });
+
+  it("rejects a revision whose module or change target does not match the challenged item", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-1",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+
+    const result = await repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      agentContent: "不应保存。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { items: [] },
+        expectedVersion: 0,
+        nextVersion: 1,
+      },
+      changes: [
+        {
+          target: { moduleType: "risks", section: "items", itemId: "risk-2" },
+          reason: "目标不一致。",
+          newEvidenceSourceIds: [],
+          summary: "不应写入。",
+        },
+      ],
+      now,
+    });
+
+    const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    expect(result).toEqual({ completed: false });
+    expect(snapshot).toMatchObject({ currentVersion: 0, revisions: [] });
+    expect(snapshot?.messages).toEqual([expect.objectContaining({ status: "queued" })]);
+  });
+
+  it("rejects a revision payload that does not match its module type", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-1",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const invalidInput: unknown = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      agentContent: "不应保存。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { question: "错误模块", whyItMatters: "类型不匹配。" },
+        expectedVersion: 0,
+        nextVersion: 1,
+      },
+      changes: [
+        {
+          target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+          reason: "测试输入。",
+          newEvidenceSourceIds: [],
+          summary: "不应写入。",
+        },
+      ],
+      now,
+    };
+
+    await expect(repository.completeRevision(invalidInput as CompleteRevision)).resolves.toEqual({
+      completed: false,
+    });
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      currentVersion: 0,
+      revisions: [],
     });
   });
 

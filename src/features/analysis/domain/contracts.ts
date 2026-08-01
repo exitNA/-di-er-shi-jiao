@@ -137,6 +137,7 @@ export const reportItemTargetSchema = z
 export const conversationMessageRoleSchema = z.enum(["user", "agent"]);
 export const conversationMessageStatusSchema = z.enum([
   "queued",
+  "running",
   "completed",
   "recoverable",
 ]);
