@@ -1,8 +1,9 @@
 import { createServer } from 'http';
 import { getLogger } from '@logtape/logtape';
 import next from 'next';
+import { isDevelopmentRuntime, requestPath, shouldLogAccess } from './server/runtime';
 
-const dev = process.env.COZE_PROJECT_ENV !== 'PROD';
+const dev = isDevelopmentRuntime(process.env);
 const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT || '5000', 10);
 const logger = getLogger(['second-perspective', 'server']);
@@ -13,10 +14,24 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   const server = createServer(async (req, res) => {
+    const startedAt = performance.now();
+    const path = requestPath(req.url);
+    res.once('finish', () => {
+      if (!shouldLogAccess(path)) return;
+      logger.info('HTTP {method} {path} {statusCode} in {durationMs}ms', {
+        method: req.method ?? 'GET',
+        path,
+        statusCode: res.statusCode,
+        durationMs: Math.round(performance.now() - startedAt),
+      });
+    });
     try {
       await handle(req, res);
-    } catch (err) {
-      logger.error('Request handling failed', { url: req.url ?? '/' });
+    } catch {
+      logger.error('Request handling failed: {method} {path}', {
+        method: req.method ?? 'GET',
+        path,
+      });
       res.statusCode = 500;
       res.end('Internal server error');
     }
