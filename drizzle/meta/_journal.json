@@ -15,6 +15,13 @@
       "when": 1785568588004,
       "tag": "0001_m2_conversation_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785575967060,
+      "tag": "0002_m2_revision_integrity",
+      "breakpoints": true
     }
   ]
 }

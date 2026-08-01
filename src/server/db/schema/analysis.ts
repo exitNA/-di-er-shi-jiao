@@ -118,6 +118,8 @@ export const conversationMessages = pgTable(
     content: text("content").notNull(),
     status: text("status").notNull(),
     idempotencyKey: text("idempotency_key"),
+    leaseId: text("lease_id"),
+    leaseExpiresAt: now("lease_expires_at"),
     createdAt: now("created_at").notNull().defaultNow(),
     updatedAt: now("updated_at").notNull().defaultNow(),
   },

@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { and, eq, sql } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  resolveReportItemTarget,
+  risksModuleSchema,
+} from "@/features/analysis/domain/contracts";
 import { PostgresAnalysisRepository } from "@/features/analysis/server/postgres-analysis-repository";
 import type { CompleteRevision } from "@/features/analysis/server/analysis-repository";
-import { analysisEvents, reportModules, reportSources } from "@/server/db/schema/analysis";
+import { analysisEvents, reportModules, reportSources, reports } from "@/server/db/schema/analysis";
 import { users } from "@/server/db/schema/auth";
 import { createTestDb, migrateTestDb, truncateTestDb } from "../../../helpers/database";
 
@@ -31,6 +38,25 @@ async function createAnalysis(userId: string, idempotencyKey = randomUUID()) {
     now,
   };
   return { input, result: await repository.createAnalysis(input) };
+}
+
+async function acquireRevision(
+  input: { jobId: string; reportId: string },
+  userId: string,
+  messageId: string,
+  leaseId: string,
+): Promise<string> {
+  const acquired = await repository.startRevision({
+    jobId: input.jobId,
+    reportId: input.reportId,
+    userId,
+    messageId,
+    leaseId,
+    leaseExpiresAt: new Date(now.getTime() + 30_000),
+    now,
+  });
+  if (!acquired) throw new Error("Expected revision lease");
+  return leaseId;
 }
 
 describe("PostgresAnalysisRepository", () => {
@@ -120,18 +146,78 @@ describe("PostgresAnalysisRepository", () => {
       messageId: challenge.messageId,
       now,
     };
+    const leaseExpiresAt = new Date(now.getTime() + 30_000);
 
     const acquired = await Promise.all([
-      repository.startRevision(acquire),
-      repository.startRevision(acquire),
+      repository.startRevision({ ...acquire, leaseId: "worker-1", leaseExpiresAt }),
+      repository.startRevision({ ...acquire, leaseId: "worker-2", leaseExpiresAt }),
     ]);
 
+    const winningLeaseId = acquired[0] ? "worker-1" : "worker-2";
     expect(acquired.sort()).toEqual([false, true]);
-    await expect(repository.recoverRevision(acquire)).resolves.toBe(true);
-    await expect(repository.startRevision(acquire)).resolves.toBe(true);
+    await expect(repository.recoverRevision({
+      ...acquire,
+      leaseId: winningLeaseId,
+    })).resolves.toBe(true);
+    await expect(repository.startRevision({
+      ...acquire,
+      leaseId: "worker-3",
+      leaseExpiresAt,
+    })).resolves.toBe(true);
     await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
       messages: [expect.objectContaining({ status: "running" })],
     });
+  });
+
+  it("takes over an expired revision lease and fences the disappeared worker", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-expired-lease",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const ownership = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+    };
+    const leaseExpiresAt = new Date(now.getTime() + 1_000);
+
+    await expect(repository.startRevision({
+      ...ownership,
+      leaseId: "worker-1",
+      leaseExpiresAt,
+      now,
+    })).resolves.toBe(true);
+    await expect(repository.startRevision({
+      ...ownership,
+      leaseId: "worker-2",
+      leaseExpiresAt: new Date(leaseExpiresAt.getTime() + 1_000),
+      now: new Date(leaseExpiresAt.getTime() - 1),
+    })).resolves.toBe(false);
+    await expect(repository.startRevision({
+      ...ownership,
+      leaseId: "worker-2",
+      leaseExpiresAt: new Date(leaseExpiresAt.getTime() + 1_000),
+      now: leaseExpiresAt,
+    })).resolves.toBe(true);
+    await expect(repository.recoverRevision({
+      ...ownership,
+      leaseId: "worker-1",
+      now: leaseExpiresAt,
+    })).resolves.toBe(false);
+    await expect(repository.recoverRevision({
+      ...ownership,
+      leaseId: "worker-2",
+      now: leaseExpiresAt,
+    })).resolves.toBe(true);
   });
 
   it("atomically completes an Agent response without changing the report", async () => {
@@ -152,13 +238,18 @@ describe("PostgresAnalysisRepository", () => {
       reportId: input.reportId,
       userId,
       messageId: challenge.messageId,
+      leaseId: "response-worker",
       now,
     };
-    await repository.startRevision(ownership);
+    await repository.startRevision({
+      ...ownership,
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+    });
 
     await expect(repository.completeRevisionResponse({
       ...ownership,
       agentContent: "复核后无需修订。",
+      expectedReportVersion: 0,
     })).resolves.toBe(true);
 
     await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
@@ -168,6 +259,96 @@ describe("PostgresAnalysisRepository", () => {
         expect.objectContaining({ role: "agent", content: "复核后无需修订。" }),
       ]),
       revisions: [],
+    });
+  });
+
+  it("rejects a response-only completion when the reviewed report version is stale", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-stale-response",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const ownership = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId: "response-worker",
+      now,
+    };
+    await repository.startRevision({
+      ...ownership,
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+    });
+    await db
+      .update(reports)
+      .set({ currentVersion: 1 })
+      .where(eq(reports.id, input.reportId));
+
+    await expect(repository.completeRevisionResponse({
+      ...ownership,
+      agentContent: "基于旧报告的回答不应保存。",
+      expectedReportVersion: 0,
+    })).resolves.toBe(false);
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      currentVersion: 1,
+      messages: [expect.objectContaining({ role: "user", status: "recoverable" })],
+    });
+  });
+
+  it("serializes response-only CAS against an uncommitted report revision", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-concurrent-response",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "concurrent-response-worker");
+    let reportUpdated!: () => void;
+    let allowCommit!: () => void;
+    const updated = new Promise<void>((resolve) => { reportUpdated = resolve; });
+    const commit = new Promise<void>((resolve) => { allowCommit = resolve; });
+    const concurrentRevision = db.transaction(async (tx) => {
+      await tx
+        .update(reports)
+        .set({ currentVersion: 1 })
+        .where(eq(reports.id, input.reportId));
+      reportUpdated();
+      await commit;
+    });
+    await updated;
+
+    const completion = repository.completeRevisionResponse({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId,
+      agentContent: "基于旧报告的回答不应保存。",
+      expectedReportVersion: 0,
+      now,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    allowCommit();
+    await concurrentRevision;
+
+    await expect(completion).resolves.toBe(false);
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      currentVersion: 1,
+      messages: [expect.objectContaining({ role: "user", status: "recoverable" })],
     });
   });
 
@@ -183,12 +364,25 @@ describe("PostgresAnalysisRepository", () => {
       idempotencyKey: "challenge-1",
       now,
     });
+    const staleChallenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "并发复核同一风险。",
+      idempotencyKey: "challenge-2",
+      now,
+    });
+    if (!challenge || !staleChallenge) throw new Error("Expected owned challenges");
+    const firstLeaseId = await acquireRevision(input, userId, challenge.messageId, "first-worker");
+    const staleLeaseId = await acquireRevision(input, userId, staleChallenge.messageId, "stale-worker");
 
     const first = await repository.completeRevision({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
       messageId: challenge.messageId,
+      leaseId: firstLeaseId,
       agentContent: "复核后已修订。",
       expectedReportVersion: 0,
       module: {
@@ -212,20 +406,22 @@ describe("PostgresAnalysisRepository", () => {
       reportId: input.reportId,
       userId,
       messageId: challenge.messageId,
+      leaseId: firstLeaseId,
       now,
     });
     const stale = await repository.completeRevision({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
-      messageId: challenge.messageId,
+      messageId: staleChallenge.messageId,
+      leaseId: staleLeaseId,
       agentContent: "这次过期修订不应覆盖报告。",
       expectedReportVersion: 0,
       module: {
         moduleType: "risks",
         payload: { items: [] },
-        expectedVersion: 1,
-        nextVersion: 2,
+        expectedVersion: 0,
+        nextVersion: 1,
       },
       changes: [
         {
@@ -244,10 +440,11 @@ describe("PostgresAnalysisRepository", () => {
     expect(stale.completed).toBe(false);
     expect(snapshot).toMatchObject({ currentVersion: 1 });
     expect(snapshot?.revisions).toHaveLength(1);
-    expect(snapshot?.messages).toHaveLength(2);
-    expect(snapshot?.messages.find((message) => message.role === "user")).toMatchObject({
-      status: "completed",
-    });
+    expect(snapshot?.messages).toHaveLength(3);
+    expect(snapshot?.messages.filter((message) => message.role === "user").map((message) => message.status).sort()).toEqual([
+      "completed",
+      "recoverable",
+    ]);
   });
 
   it("rejects a revision whose module or change target does not match the challenged item", async () => {
@@ -263,12 +460,14 @@ describe("PostgresAnalysisRepository", () => {
       now,
     });
     if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "mismatched-target-worker");
 
     const result = await repository.completeRevision({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
       messageId: challenge.messageId,
+      leaseId,
       agentContent: "不应保存。",
       expectedReportVersion: 0,
       module: {
@@ -291,7 +490,7 @@ describe("PostgresAnalysisRepository", () => {
     const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
     expect(result).toEqual({ completed: false });
     expect(snapshot).toMatchObject({ currentVersion: 0, revisions: [] });
-    expect(snapshot?.messages).toEqual([expect.objectContaining({ status: "queued" })]);
+    expect(snapshot?.messages).toEqual([expect.objectContaining({ status: "running" })]);
   });
 
   it("rejects a revision payload that does not match its module type", async () => {
@@ -307,11 +506,13 @@ describe("PostgresAnalysisRepository", () => {
       now,
     });
     if (!challenge) throw new Error("Expected owned challenge");
+    const leaseId = await acquireRevision(input, userId, challenge.messageId, "invalid-payload-worker");
     const invalidInput: unknown = {
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
       messageId: challenge.messageId,
+      leaseId,
       agentContent: "不应保存。",
       expectedReportVersion: 0,
       module: {
@@ -411,5 +612,60 @@ describe("PostgresAnalysisRepository", () => {
 
     await expect(db.select().from(reportSources)).resolves.toHaveLength(1);
     await expect(db.select().from(reportModules)).resolves.toHaveLength(6);
+  });
+
+  it("backfills stable unique IDs into legacy risk payloads so they remain targetable", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const legacyRisk = {
+      type: "overgeneralization",
+      sourceMaterialQuote: "唯一选择。",
+      explanation: "把单一选项扩大成唯一选项。",
+      confidence: { score: 0.8, rationale: "存在绝对化表达" },
+    };
+    await db
+      .update(reportModules)
+      .set({ status: "completed", version: 1, payload: { items: [legacyRisk, legacyRisk] } })
+      .where(
+        and(
+          eq(reportModules.reportId, input.reportId),
+          eq(reportModules.moduleType, "risks"),
+        ),
+      );
+    const migrationSql = readMigrationFiles({
+      migrationsFolder: path.join(process.cwd(), "drizzle"),
+    }).flatMap((migration) => migration.sql);
+    const backfill = migrationSql.find(
+      (statement) => statement.includes("jsonb_array_elements") && statement.includes("report_modules"),
+    );
+
+    expect(backfill).toBeDefined();
+    if (!backfill) return;
+    await db.execute(sql.raw(backfill));
+    const firstSnapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    const firstRisks = risksModuleSchema.parse(firstSnapshot?.modules.risks.payload);
+    const firstIds = firstRisks.items.map((item) => item.id);
+
+    await db.execute(sql.raw(backfill));
+    const secondSnapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    const secondRisks = risksModuleSchema.parse(secondSnapshot?.modules.risks.payload);
+
+    expect(new Set(firstIds).size).toBe(2);
+    expect(secondRisks.items.map((item) => item.id)).toEqual(firstIds);
+    const migratedTarget = {
+      moduleType: "risks",
+      section: "items",
+      itemId: firstIds[0],
+    } as const;
+    expect(resolveReportItemTarget(secondSnapshot!.modules, migratedTarget)).toBe(true);
+    await expect(repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: migratedTarget,
+      content: "升级后质疑旧风险。",
+      idempotencyKey: "challenge-migrated-risk",
+      now,
+    })).resolves.toMatchObject({ created: true });
   });
 });

@@ -1,6 +1,10 @@
 import { getLogger } from "@logtape/logtape";
 
-import type { ConversationMessage, ReportItemTarget } from "@/features/analysis/domain/contracts";
+import {
+  resolveReportItemTarget,
+  type ConversationMessage,
+  type ReportItemTarget,
+} from "@/features/analysis/domain/contracts";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
 import type { ProductEventRecorder } from "@/server/observability/product-events";
 import type { RevisionOrchestrator } from "./revision-orchestrator";
@@ -23,7 +27,7 @@ export type SubmitChallengeResult =
       created: boolean;
       status: ConversationMessage["status"];
     }
-  | { ok: false; code: "NOT_FOUND" };
+  | { ok: false; code: "INVALID_TARGET" | "NOT_FOUND" };
 
 export async function submitChallenge(
   input: SubmitChallengeInput,
@@ -34,13 +38,22 @@ export async function submitChallenge(
 ): Promise<SubmitChallengeResult> {
   const snapshot = await repository.getOwnedSnapshot(input.userId, input.jobId);
   if (!snapshot) return { ok: false, code: "NOT_FOUND" };
-
-  const challenge = await repository.createChallenge({
-    ...input,
-    reportId: snapshot.reportId,
-    now: now(),
-  });
-  if (!challenge) return { ok: false, code: "NOT_FOUND" };
+  const targetExists = resolveReportItemTarget(snapshot.modules, input.target);
+  const challenge = targetExists
+    ? await repository.createChallenge({
+        ...input,
+        reportId: snapshot.reportId,
+        now: now(),
+      })
+    : await repository.findChallengeByIdempotency({
+        userId: input.userId,
+        jobId: input.jobId,
+        reportId: snapshot.reportId,
+        idempotencyKey: input.idempotencyKey,
+      }).then((existing) => existing && { ...existing, created: false });
+  if (!challenge) {
+    return { ok: false, code: targetExists ? "NOT_FOUND" : "INVALID_TARGET" };
+  }
 
   if (challenge.created) {
     await repository.appendEvent({

@@ -1,11 +1,10 @@
-import { and, asc, desc, eq, exists, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type {
   AnalysisJobStatus,
   AnalysisSnapshot,
   ConversationMessage,
   ReportRevision,
   ReportModuleStatus,
-  ReportModuleType,
 } from "@/features/analysis/domain/contracts";
 import {
   argumentModuleSchema,
@@ -13,6 +12,7 @@ import {
   overviewModuleSchema,
   perspectivesModuleSchema,
   reflectionModuleSchema,
+  reportRevisionChangeSchema,
   risksModuleSchema,
   sourcesModuleSchema,
 } from "@/features/analysis/domain/contracts";
@@ -43,6 +43,7 @@ import type {
   RecoverRevision,
   SaveModule,
   StartExpertRun,
+  StartRevision,
 } from "./analysis-repository";
 
 function asJobStatus(status: string): AnalysisJobStatus {
@@ -184,6 +185,28 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
     }
   }
 
+  async findChallengeByIdempotency(
+    input: Pick<NewChallenge, "idempotencyKey" | "jobId" | "reportId" | "userId">,
+  ): Promise<{ messageId: string } | null> {
+    const [message] = await this.db
+      .select({ messageId: conversationMessages.id })
+      .from(conversationMessages)
+      .innerJoin(reports, eq(reports.id, conversationMessages.reportId))
+      .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+      .where(
+        and(
+          eq(conversationMessages.reportId, input.reportId),
+          eq(conversationMessages.userId, input.userId),
+          eq(conversationMessages.idempotencyKey, input.idempotencyKey),
+          eq(reports.jobId, input.jobId),
+          eq(reports.userId, input.userId),
+          eq(analysisJobs.userId, input.userId),
+        ),
+      )
+      .limit(1);
+    return message ?? null;
+  }
+
   async completeRevision(input: CompleteRevision): Promise<{ completed: boolean; revisionId?: string }> {
     return this.db.transaction(async (tx) => {
       const [message] = await tx
@@ -197,22 +220,43 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
             eq(conversationMessages.reportId, input.reportId),
             eq(conversationMessages.userId, input.userId),
             eq(conversationMessages.role, "user"),
-            inArray(conversationMessages.status, ["queued", "running", "recoverable"]),
+            eq(conversationMessages.status, "running"),
+            eq(conversationMessages.leaseId, input.leaseId),
+            gt(conversationMessages.leaseExpiresAt, input.now),
             eq(reports.id, input.reportId),
             eq(reports.jobId, input.jobId),
             eq(reports.userId, input.userId),
             eq(analysisJobs.userId, input.userId),
           ),
         )
+        .for("update")
         .limit(1);
       if (!message) return { completed: false };
       if (
         input.module.moduleType !== message.target.moduleType ||
         !input.changes.length ||
         !input.changes.every((change) => hasSameTarget(change.target, message.target)) ||
+        !input.changes.every((change) => reportRevisionChangeSchema.safeParse(change).success) ||
         !modulePayloadSchemas[input.module.moduleType].safeParse(input.module.payload).success
       ) {
         return { completed: false };
+      }
+      const evidenceSourceIds = [
+        ...new Set(input.changes.flatMap((change) => change.newEvidenceSourceIds)),
+      ];
+      if (evidenceSourceIds.length) {
+        const persistedSources = await tx
+          .select({ sourceKey: reportSources.sourceKey })
+          .from(reportSources)
+          .where(
+            and(
+              eq(reportSources.reportId, input.reportId),
+              inArray(reportSources.sourceKey, evidenceSourceIds),
+            ),
+          );
+        if (persistedSources.length !== evidenceSourceIds.length) {
+          return { completed: false };
+        }
       }
 
       const [report] = await tx
@@ -265,7 +309,12 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         .returning({ id: conversationMessages.id });
       await tx
         .update(conversationMessages)
-        .set({ status: "completed", updatedAt: input.now })
+        .set({
+          status: "completed",
+          leaseId: null,
+          leaseExpiresAt: null,
+          updatedAt: input.now,
+        })
         .where(eq(conversationMessages.id, input.messageId));
 
       const [revision] = await tx
@@ -299,22 +348,50 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
     });
   }
 
-  async startRevision(input: RecoverRevision): Promise<boolean> {
-    return this.db.transaction((tx) =>
-      this.transitionRevisionMessage(
-        tx,
-        input,
-        ["queued", "recoverable"],
-        "running",
-      ),
-    );
+  async startRevision(input: StartRevision): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const [message] = await tx
+        .update(conversationMessages)
+        .set({
+          status: "running",
+          leaseId: input.leaseId,
+          leaseExpiresAt: input.leaseExpiresAt,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(conversationMessages.id, input.messageId),
+            eq(conversationMessages.reportId, input.reportId),
+            eq(conversationMessages.userId, input.userId),
+            eq(conversationMessages.role, "user"),
+            or(
+              inArray(conversationMessages.status, ["queued", "recoverable"]),
+              and(
+                eq(conversationMessages.status, "running"),
+                or(
+                  isNull(conversationMessages.leaseExpiresAt),
+                  lte(conversationMessages.leaseExpiresAt, input.now),
+                ),
+              ),
+            ),
+            this.ownedReportExists(tx, input),
+          ),
+        )
+        .returning({ id: conversationMessages.id });
+      if (!message) return false;
+
+      await this.appendConversationEvent(tx, input, "running");
+      return true;
+    });
   }
 
   async completeRevisionResponse(input: CompleteRevisionResponse): Promise<boolean> {
     return this.db.transaction(async (tx) => {
       const [message] = await tx
-        .update(conversationMessages)
-        .set({ status: "completed", updatedAt: input.now })
+        .select({ target: conversationMessages.target })
+        .from(conversationMessages)
+        .innerJoin(reports, eq(reports.id, conversationMessages.reportId))
+        .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
         .where(
           and(
             eq(conversationMessages.id, input.messageId),
@@ -322,25 +399,44 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
             eq(conversationMessages.userId, input.userId),
             eq(conversationMessages.role, "user"),
             eq(conversationMessages.status, "running"),
-            exists(
-              tx
-                .select({ reportId: reports.id })
-                .from(reports)
-                .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
-                .where(
-                  and(
-                    eq(reports.id, input.reportId),
-                    eq(reports.jobId, input.jobId),
-                    eq(reports.userId, input.userId),
-                    eq(analysisJobs.userId, input.userId),
-                  ),
-                ),
-            ),
+            eq(conversationMessages.leaseId, input.leaseId),
+            gt(conversationMessages.leaseExpiresAt, input.now),
+            eq(reports.id, input.reportId),
+            eq(reports.jobId, input.jobId),
+            eq(reports.userId, input.userId),
+            eq(analysisJobs.userId, input.userId),
           ),
         )
-        .returning({ target: conversationMessages.target });
+        .for("update")
+        .limit(1);
       if (!message) return false;
 
+      const [report] = await tx
+        .update(reports)
+        .set({ currentVersion: input.expectedReportVersion })
+        .where(
+          and(
+            eq(reports.id, input.reportId),
+            eq(reports.jobId, input.jobId),
+            eq(reports.userId, input.userId),
+            eq(reports.currentVersion, input.expectedReportVersion),
+          ),
+        )
+        .returning({ id: reports.id });
+      if (!report) {
+        await this.markRevisionRecoverable(tx, input);
+        return false;
+      }
+
+      await tx
+        .update(conversationMessages)
+        .set({
+          status: "completed",
+          leaseId: null,
+          leaseExpiresAt: null,
+          updatedAt: input.now,
+        })
+        .where(eq(conversationMessages.id, input.messageId));
       const [agentMessage] = await tx
         .insert(conversationMessages)
         .values({
@@ -385,7 +481,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
     return this.transitionRevisionMessage(
       tx,
       input,
-      ["queued", "running"],
+      ["running"],
       "recoverable",
     );
   }
@@ -400,13 +496,19 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
   ): Promise<boolean> {
     const [message] = await tx
       .update(conversationMessages)
-      .set({ status: to, updatedAt: input.now })
+      .set({
+        status: to,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: input.now,
+      })
       .where(
         and(
           eq(conversationMessages.id, input.messageId),
           eq(conversationMessages.reportId, input.reportId),
           eq(conversationMessages.userId, input.userId),
           eq(conversationMessages.role, "user"),
+          eq(conversationMessages.leaseId, input.leaseId),
           inArray(conversationMessages.status, from),
           exists(
             tx
@@ -435,6 +537,44 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
       createdAt: input.now,
     });
     return true;
+  }
+
+  private ownedReportExists(
+    tx: Parameters<AppDb["transaction"]>[0] extends (tx: infer Transaction) => unknown
+      ? Transaction
+      : never,
+    input: Pick<RecoverRevision, "jobId" | "reportId" | "userId">,
+  ) {
+    return exists(
+      tx
+        .select({ reportId: reports.id })
+        .from(reports)
+        .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+        .where(
+          and(
+            eq(reports.id, input.reportId),
+            eq(reports.jobId, input.jobId),
+            eq(reports.userId, input.userId),
+            eq(analysisJobs.userId, input.userId),
+          ),
+        ),
+    );
+  }
+
+  private async appendConversationEvent(
+    tx: Parameters<AppDb["transaction"]>[0] extends (tx: infer Transaction) => unknown
+      ? Transaction
+      : never,
+    input: Pick<RecoverRevision, "jobId" | "messageId" | "userId" | "now">,
+    status: ConversationMessage["status"],
+  ): Promise<void> {
+    await tx.insert(analysisEvents).values({
+      jobId: input.jobId,
+      userId: input.userId,
+      eventType: "conversation.updated",
+      payload: { messageId: input.messageId, status },
+      createdAt: input.now,
+    });
   }
 
   async getJobForExecution(jobId: string): Promise<ExecutionJob | null> {

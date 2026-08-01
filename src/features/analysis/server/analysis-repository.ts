@@ -2,7 +2,6 @@ import type {
   AnalysisSnapshot,
   AnalysisJobStatus,
   BaselineDraft,
-  ConversationMessage,
   ExternalSource,
   ReportItemTarget,
   ReportRevisionChange,
@@ -83,6 +82,7 @@ export type CompleteRevision = {
   reportId: string;
   userId: string;
   messageId: string;
+  leaseId: string;
   agentContent: string;
   expectedReportVersion: number;
   module: RevisionModuleUpdate;
@@ -95,11 +95,17 @@ export type RecoverRevision = {
   reportId: string;
   userId: string;
   messageId: string;
+  leaseId: string;
   now: Date;
+};
+
+export type StartRevision = RecoverRevision & {
+  leaseExpiresAt: Date;
 };
 
 export type CompleteRevisionResponse = RecoverRevision & {
   agentContent: string;
+  expectedReportVersion: number;
 };
 
 export type StartExpertRun = {
@@ -146,7 +152,10 @@ export type AnalysisEvent = Omit<NewAnalysisEvent, "now"> & {
 export interface AnalysisRepository {
   createAnalysis(input: NewAnalysis): Promise<{ jobId: string; created: boolean }>;
   createChallenge(input: NewChallenge): Promise<{ messageId: string; created: boolean } | null>;
-  startRevision(input: RecoverRevision): Promise<boolean>;
+  findChallengeByIdempotency(
+    input: Pick<NewChallenge, "idempotencyKey" | "jobId" | "reportId" | "userId">,
+  ): Promise<{ messageId: string } | null>;
+  startRevision(input: StartRevision): Promise<boolean>;
   completeRevisionResponse(input: CompleteRevisionResponse): Promise<boolean>;
   completeRevision(input: CompleteRevision): Promise<{ completed: boolean; revisionId?: string }>;
   recoverRevision(input: RecoverRevision): Promise<boolean>;

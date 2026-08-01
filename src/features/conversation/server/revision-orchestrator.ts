@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getLogger } from "@logtape/logtape";
 
 import {
@@ -6,6 +7,7 @@ import {
   perspectivesModuleSchema,
   reflectionModuleSchema,
   risksModuleSchema,
+  resolveReportItemTarget,
   sourcesModuleSchema,
   type BaselineDraft,
   type SourcesModule,
@@ -17,9 +19,11 @@ import type {
 } from "@/features/analysis/server/analysis-repository";
 import type { RevisionRunResult } from "@/features/conversation/domain/contracts";
 import type { ExpertSuite } from "@/server/agents/expert-suite";
+import { withTimeout } from "@/server/agents/baseline-orchestrator";
 import type { ProductEventRecorder } from "@/server/observability/product-events";
 
 const logger = getLogger(["second-perspective", "conversation"]);
+const revisionLeaseMs = 30_000;
 const moduleSchemas = {
   overview: overviewModuleSchema,
   argument: argumentModuleSchema,
@@ -35,6 +39,7 @@ export class RevisionOrchestrator {
     private readonly repository: AnalysisRepository,
     private readonly now: () => Date = () => new Date(),
     private readonly recordProductEvent: ProductEventRecorder = async () => false,
+    private readonly timeoutMs = 25_000,
   ) {}
 
   async run(input: {
@@ -57,10 +62,14 @@ export class RevisionOrchestrator {
     if (existing) return { status: "completed", revisionId: existing.id };
     if (message.status === "completed") return { status: "completed" };
 
+    const leaseId = randomUUID();
+    const leaseStartedAt = this.now();
     const acquired = await this.repository.startRevision({
       ...input,
       reportId: snapshot.reportId,
-      now: this.now(),
+      leaseId,
+      leaseExpiresAt: new Date(leaseStartedAt.getTime() + revisionLeaseMs),
+      now: leaseStartedAt,
     });
     if (!acquired) {
       const latest = await this.repository.getOwnedSnapshot(input.userId, input.jobId);
@@ -78,26 +87,35 @@ export class RevisionOrchestrator {
           : { status: "recoverable" };
     }
 
-    const current = snapshot.modules[message.target.moduleType];
-    if (!current.payload) return this.recover(input, snapshot.reportId);
+    const executionSnapshot = await this.repository.getOwnedSnapshot(input.userId, input.jobId);
+    if (!executionSnapshot || !resolveReportItemTarget(executionSnapshot.modules, message.target)) {
+      return this.recover(input, snapshot.reportId, leaseId);
+    }
+    const current = executionSnapshot.modules[message.target.moduleType];
+    if (!current.payload) return this.recover(input, snapshot.reportId, leaseId);
 
     try {
-      const review = await this.experts.reviewTarget({
-        material: job.material,
-        target: message.target,
-        currentModule: current.payload as BaselineDraft[ReportModuleType],
-        conversation: snapshot.messages,
-        newSources: (snapshot.modules.sources.payload as SourcesModule | undefined)?.sources,
-      });
+      const review = await withTimeout(this.timeoutMs, (abortSignal) =>
+        this.experts.reviewTarget({
+          material: job.material,
+          target: message.target,
+          currentModule: current.payload as BaselineDraft[ReportModuleType],
+          conversation: executionSnapshot.messages,
+          newSources: (executionSnapshot.modules.sources.payload as SourcesModule | undefined)?.sources,
+          abortSignal,
+        }),
+      );
       const replacement = review.value.replacement;
       if (!replacement) {
         const completed = await this.repository.completeRevisionResponse({
           ...input,
           reportId: snapshot.reportId,
+          leaseId,
           agentContent: review.value.responseText,
+          expectedReportVersion: executionSnapshot.currentVersion,
           now: this.now(),
         });
-        if (!completed) return this.recover(input, snapshot.reportId);
+        if (!completed) return this.recover(input, snapshot.reportId, leaseId);
         logger.info("Report challenge completed", {
           jobId: input.jobId,
           messageId: input.messageId,
@@ -113,8 +131,9 @@ export class RevisionOrchestrator {
         reportId: snapshot.reportId,
         userId: input.userId,
         messageId: input.messageId,
+        leaseId,
         agentContent: review.value.responseText,
-        expectedReportVersion: snapshot.currentVersion,
+        expectedReportVersion: executionSnapshot.currentVersion,
         module: revisionModule(
           message.target.moduleType,
           parsedModule,
@@ -129,7 +148,7 @@ export class RevisionOrchestrator {
         now: this.now(),
       });
       if (!completed.completed || !completed.revisionId) {
-        return this.recover(input, snapshot.reportId);
+        return this.recover(input, snapshot.reportId, leaseId);
       }
       await this.recordProductEventSafely({
         userId: input.userId,
@@ -156,15 +175,16 @@ export class RevisionOrchestrator {
         status: "recoverable",
         errorCode: code,
       });
-      return this.recover(input, snapshot.reportId);
+      return this.recover(input, snapshot.reportId, leaseId);
     }
   }
 
   private async recover(
     input: { userId: string; jobId: string; messageId: string },
     reportId: string,
+    leaseId: string,
   ): Promise<{ status: "recoverable" }> {
-    await this.repository.recoverRevision({ ...input, reportId, now: this.now() });
+    await this.repository.recoverRevision({ ...input, reportId, leaseId, now: this.now() });
     return { status: "recoverable" };
   }
 

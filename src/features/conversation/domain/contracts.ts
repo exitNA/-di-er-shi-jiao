@@ -1,3 +1,13 @@
+import { z } from "zod";
+
+import {
+  argumentModuleSchema,
+  overviewModuleSchema,
+  perspectivesModuleSchema,
+  reflectionModuleSchema,
+  risksModuleSchema,
+  sourcesModuleSchema,
+} from "@/features/analysis/domain/contracts";
 import type {
   BaselineDraft,
   ConversationMessage,
@@ -30,3 +40,36 @@ export type RevisionRunResult =
   | { status: "running" }
   | { status: "recoverable" }
   | { status: "not-found" };
+
+export function targetedReviewSchema(
+  moduleType: ReportModuleType,
+  allowedEvidenceSourceIds: ReadonlySet<string>,
+): z.ZodType<TargetedReview> {
+  const moduleSchemas: Record<ReportModuleType, z.ZodType<BaselineDraft[ReportModuleType]>> = {
+    overview: overviewModuleSchema,
+    argument: argumentModuleSchema,
+    perspectives: perspectivesModuleSchema,
+    sources: sourcesModuleSchema,
+    risks: risksModuleSchema,
+    reflection: reflectionModuleSchema,
+  };
+  return z.object({
+    responseText: z.string().min(1),
+    replacement: z.object({
+      module: moduleSchemas[moduleType],
+      reason: z.string().min(1),
+      newEvidenceSourceIds: z.array(z.string().min(1)),
+      summary: z.string().min(1),
+    }).strict().optional(),
+  }).strict().superRefine((value, context) => {
+    value.replacement?.newEvidenceSourceIds.forEach((sourceId, index) => {
+      if (!allowedEvidenceSourceIds.has(sourceId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["replacement", "newEvidenceSourceIds", index],
+          message: "evidence source must already belong to the report",
+        });
+      }
+    });
+  });
+}

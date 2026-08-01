@@ -352,7 +352,7 @@ function environmentPrice(
   return Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
-function withTimeout<T>(milliseconds: number, run: (abortSignal: AbortSignal) => Promise<T>): Promise<T> {
+export function withTimeout<T>(milliseconds: number, run: (abortSignal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

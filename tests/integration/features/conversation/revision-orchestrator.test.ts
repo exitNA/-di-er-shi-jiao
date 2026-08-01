@@ -124,6 +124,197 @@ describe("conversation revision flow", () => {
     expect(snapshot?.revisions).toHaveLength(1);
   });
 
+  it("takes over an expired running challenge when the idempotency key is replayed", async () => {
+    const fixture = await createCompletedRiskReport();
+    const challenge = await repository.createChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      reportId: fixture.reportId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-disappeared-worker",
+      now: new Date(now.getTime() - 2_000),
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    await repository.startRevision({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      reportId: fixture.reportId,
+      messageId: challenge.messageId,
+      leaseId: "disappeared-worker",
+      leaseExpiresAt: new Date(now.getTime() - 1_000),
+      now: new Date(now.getTime() - 2_000),
+    });
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    const review = vi.spyOn(experts, "reviewTarget");
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-disappeared-worker",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toMatchObject({ ok: true, created: false, status: "completed" });
+    expect(review).toHaveBeenCalledOnce();
+  });
+
+  it("aborts a timed-out targeted review and leaves the challenge recoverable", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 100 } });
+    const review = vi.spyOn(experts, "reviewTarget");
+    const orchestrator = new RevisionOrchestrator(
+      experts,
+      repository,
+      () => new Date(),
+      recorder,
+      10,
+    );
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-timeout",
+    }, repository, orchestrator, () => new Date(), recorder);
+
+    expect(result).toMatchObject({ ok: true, status: "recoverable" });
+    expect(review.mock.calls[0]?.[0].abortSignal).toBeInstanceOf(AbortSignal);
+    expect(review.mock.calls[0]?.[0].abortSignal?.aborted).toBe(true);
+  });
+
+  it("rejects a challenge whose target does not exist in the persisted report", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    const review = vi.spyOn(experts, "reviewTarget");
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target: { ...target, itemId: "risk-missing" },
+      content: "质疑不存在的风险。",
+      idempotencyKey: "challenge-missing-target",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toEqual({ ok: false, code: "INVALID_TARGET" });
+    expect(review).not.toHaveBeenCalled();
+    expect((await repository.getOwnedSnapshot(fixture.userId, fixture.jobId))?.messages).toEqual([]);
+  });
+
+  it("revalidates the persisted target immediately before execution", async () => {
+    const fixture = await createCompletedRiskReport();
+    const challenge = await repository.createChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      reportId: fixture.reportId,
+      target,
+      content: "这项风险误读了原文。",
+      idempotencyKey: "challenge-removed-target",
+      now,
+    });
+    if (!challenge) throw new Error("Expected owned challenge");
+    await repository.saveModule({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      reportId: fixture.reportId,
+      moduleType: "risks",
+      status: "completed",
+      payload: { items: [] },
+      expectedVersion: 1,
+      nextVersion: 2,
+      now,
+    });
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    const review = vi.spyOn(experts, "reviewTarget");
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    await expect(orchestrator.run({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      messageId: challenge.messageId,
+    })).resolves.toEqual({ status: "recoverable" });
+    expect(review).not.toHaveBeenCalled();
+  });
+
+  it("rejects revision evidence IDs that are not persisted report sources", async () => {
+    const fixture = await createCompletedRiskReport();
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    vi.spyOn(experts, "reviewTarget").mockResolvedValueOnce({
+      value: {
+        responseText: "不应保存带有幻觉来源的修订。",
+        replacement: {
+          module: { items: [] },
+          reason: "测试来源完整性。",
+          newEvidenceSourceIds: ["source-hallucinated"],
+          summary: "不应写入。",
+        },
+      },
+      usage: { inputTokens: 1, outputTokens: 1, latencyMs: 1 },
+    });
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "请用报告来源重新核对。",
+      idempotencyKey: "challenge-invalid-evidence",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toMatchObject({ ok: true, status: "recoverable" });
+    await expect(repository.getOwnedSnapshot(fixture.userId, fixture.jobId)).resolves.toMatchObject({
+      currentVersion: 0,
+      revisions: [],
+      messages: [expect.objectContaining({ role: "user", status: "recoverable" })],
+    });
+  });
+
+  it("accepts revision evidence IDs that already belong to the report", async () => {
+    const fixture = await createCompletedRiskReport();
+    const source = {
+      id: "source-persisted",
+      title: "来源",
+      url: "https://example.com/report",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 2,
+      excerpt: "摘要",
+    };
+    await repository.replaceSources(fixture.reportId, [source]);
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    vi.spyOn(experts, "reviewTarget").mockResolvedValueOnce({
+      value: {
+        responseText: "持久化来源支持本次修订。",
+        replacement: {
+          module: { items: [] },
+          reason: "报告来源支持修订。",
+          newEvidenceSourceIds: [source.id],
+          summary: "更新风险。",
+        },
+      },
+      usage: { inputTokens: 1, outputTokens: 1, latencyMs: 1 },
+    });
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "请用报告来源重新核对。",
+      idempotencyKey: "challenge-persisted-evidence",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toMatchObject({ ok: true, status: "completed" });
+    expect((await repository.getOwnedSnapshot(fixture.userId, fixture.jobId))?.revisions[0]?.changes[0]).toMatchObject({
+      newEvidenceSourceIds: [source.id],
+    });
+  });
+
   it("lets only one concurrent idempotent replay acquire revision work", async () => {
     const fixture = await createCompletedRiskReport();
     const experts = new FakeExpertSuite({ delaysMs: { revision: 30 } });
@@ -237,5 +428,5 @@ async function createCompletedRiskReport() {
     nextVersion: 1,
     now,
   });
-  return { userId: user.id, jobId };
+  return { userId: user.id, jobId, reportId };
 }

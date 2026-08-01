@@ -32,7 +32,9 @@ export async function POST(request: Request, context: RouteContext) {
     userId: user.id,
   });
   if (!result.ok) {
-    return Response.json({ error: "分析不存在" }, { status: 404 });
+    return result.code === "INVALID_TARGET"
+      ? Response.json({ error: "质疑目标不存在或不唯一" }, { status: 400 })
+      : Response.json({ error: "分析不存在" }, { status: 404 });
   }
   return Response.json(result, { status: result.created ? 201 : 200 });
 }

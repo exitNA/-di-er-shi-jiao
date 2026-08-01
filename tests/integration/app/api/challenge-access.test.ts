@@ -55,6 +55,14 @@ describe("challenge route access", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 400 when the well-formed target is absent or ambiguous", async () => {
+    submitChallenge.mockResolvedValue({ ok: false, code: "INVALID_TARGET" });
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects a body jobId instead of letting it override the pathname", async () => {
     const response = await POST(request({
       jobId: "99999999-9999-4999-8999-999999999999",

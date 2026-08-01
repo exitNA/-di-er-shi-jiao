@@ -4,10 +4,12 @@ import {
   baselineDraftSchema,
   externalSourceSchema,
   reportItemTargetSchema,
+  resolveReportItemTarget,
   risksModuleSchema,
   sourcesModuleSchema,
   traceableStatementSchema,
 } from "@/features/analysis/domain/contracts";
+import * as analysisContracts from "@/features/analysis/domain/contracts";
 
 const sourceMaterialStatement = {
   id: "statement-1",
@@ -147,6 +149,123 @@ describe("analysis report contracts", () => {
     ).toThrow(/id/);
   });
 
+  it("rejects duplicate risk IDs because a target must resolve uniquely", () => {
+    const duplicate = {
+      id: "risk-duplicate",
+      type: "overgeneralization" as const,
+      sourceMaterialQuote: "唯一选择。",
+      explanation: "把单一选项扩大成唯一选项。",
+      confidence: { score: 0.8, rationale: "存在绝对化表达" },
+    };
+
+    expect(() => risksModuleSchema.parse({ items: [duplicate, duplicate] })).toThrow(/id/);
+  });
+
+  it("resolves only one persisted report item for a target", () => {
+    expect(typeof analysisContracts.resolveReportItemTarget).toBe("function");
+
+    const modules = reportModules({
+      risks: {
+        items: [{
+          id: "risk-1",
+          type: "overgeneralization",
+          sourceMaterialQuote: "唯一选择。",
+          explanation: "把单一选项扩大成唯一选项。",
+          confidence: { score: 0.8, rationale: "存在绝对化表达" },
+        }],
+      },
+    });
+
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "risks",
+      section: "items",
+      itemId: "risk-1",
+    })).toBe(true);
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "risks",
+      section: "items",
+      itemId: "risk-missing",
+    })).toBe(false);
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "risks",
+      section: "unknown",
+      itemId: "risk-1",
+    })).toBe(false);
+  });
+
+  it("rejects a persisted target that resolves more than once", () => {
+    const risk = {
+      id: "risk-duplicate",
+      type: "overgeneralization" as const,
+      sourceMaterialQuote: "唯一选择。",
+      explanation: "把单一选项扩大成唯一选项。",
+      confidence: { score: 0.8, rationale: "存在绝对化表达" },
+    };
+
+    const modules = reportModules({ risks: { items: [] } });
+    modules.risks.payload = { items: [risk, risk] };
+
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "risks",
+      section: "items",
+      itemId: risk.id,
+    })).toBe(false);
+  });
+
+  it("resolves a source relation by its unique claim and source pair", () => {
+    const modules = reportModules({
+      sources: {
+        claims: [sourceMaterialStatement],
+        sources: [{
+          id: "source-1",
+          title: "来源",
+          url: "https://example.com/report",
+          domain: "example.com",
+          publisher: "Example",
+          publishedAt: null,
+          qualityTier: 2,
+          excerpt: "摘要",
+        }],
+        relations: [{ claimId: "statement-1", sourceId: "source-1", relation: "supports" }],
+        gaps: [],
+      },
+    });
+
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "sources",
+      section: "relations",
+      itemId: "statement-1:source-1",
+    })).toBe(true);
+  });
+
+  it("resolves a source relation when persisted IDs contain colons", () => {
+    const claim = { ...sourceMaterialStatement, id: "statement:1" };
+    const source = {
+      id: "source:1",
+      title: "来源",
+      url: "https://example.com/report",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 2,
+      excerpt: "摘要",
+    };
+    const modules = reportModules({
+      sources: {
+        claims: [claim],
+        sources: [source],
+        relations: [{ claimId: claim.id, sourceId: source.id, relation: "supports" }],
+        gaps: [],
+      },
+    });
+
+    expect(resolveReportItemTarget(modules, {
+      moduleType: "sources",
+      section: "relations",
+      itemId: `${claim.id}:${source.id}`,
+    })).toBe(true);
+  });
+
   it("rejects a report item target without its stable item ID", () => {
     expect(() =>
       reportItemTargetSchema.parse({
@@ -156,3 +275,15 @@ describe("analysis report contracts", () => {
     ).toThrow(/itemId/);
   });
 });
+
+function reportModules(
+  overrides: Partial<typeof baselineDraft>,
+) {
+  const draft = baselineDraftSchema.parse({ ...baselineDraft, ...overrides });
+  return Object.fromEntries(
+    Object.entries(draft).map(([moduleType, payload]) => [
+      moduleType,
+      { status: "completed", version: 1, payload },
+    ]),
+  ) as Parameters<typeof resolveReportItemTarget>[0];
+}

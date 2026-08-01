@@ -108,6 +108,18 @@ export const riskItemSchema = z.object({
 
 export const risksModuleSchema = z.object({
   items: z.array(riskItemSchema),
+}).superRefine(({ items }, context) => {
+  const ids = new Set<string>();
+  items.forEach((item, index) => {
+    if (ids.has(item.id)) {
+      context.addIssue({
+        code: "custom",
+        path: ["items", index, "id"],
+        message: "risk item id must be unique",
+      });
+    }
+    ids.add(item.id);
+  });
 });
 
 export const reflectionModuleSchema = z.object({
@@ -226,5 +238,91 @@ export type AnalysisSnapshot = {
     }
   >;
 };
+
+export function resolveReportItemTarget(
+  modules: AnalysisSnapshot["modules"],
+  target: ReportItemTarget,
+): boolean {
+  const payload = modules[target.moduleType]?.payload;
+  if (!payload) return false;
+
+  switch (target.moduleType) {
+    case "overview": {
+      const parsed = overviewModuleSchema.safeParse(payload);
+      if (!parsed.success) return false;
+      const items = target.section === "coreClaims"
+        ? parsed.data.coreClaims
+        : target.section === "mainDisputes"
+          ? parsed.data.mainDisputes
+          : target.section === "topRisks"
+            ? parsed.data.topRisks
+            : target.section === "keyUnknowns"
+              ? parsed.data.keyUnknowns
+              : undefined;
+      return hasOneId(items, target.itemId);
+    }
+    case "argument": {
+      const parsed = argumentModuleSchema.safeParse(payload);
+      if (!parsed.success) return false;
+      const items = target.section === "claims"
+        ? parsed.data.claims
+        : target.section === "evidence"
+          ? parsed.data.evidence
+          : target.section === "assumptions"
+            ? parsed.data.assumptions
+            : target.section === "reasoningSteps"
+              ? parsed.data.reasoningSteps
+              : target.section === "conclusions"
+                ? parsed.data.conclusions
+                : target.section === "gaps"
+                  ? parsed.data.gaps
+                  : target.section === "factualStatements"
+                    ? parsed.data.factualStatements
+                    : undefined;
+      return hasOneId(items, target.itemId);
+    }
+    case "perspectives": {
+      const parsed = perspectivesModuleSchema.safeParse(payload);
+      if (!parsed.success) return false;
+      const items = target.section === "supporting"
+        ? parsed.data.supporting
+        : target.section === "opposing"
+          ? parsed.data.opposing
+          : target.section === "stakeholders"
+            ? parsed.data.stakeholders
+            : target.section === "disputes"
+              ? parsed.data.disputes
+              : target.section === "unknowns"
+                ? parsed.data.unknowns
+                : target.section === "changeEvidence"
+                  ? parsed.data.changeEvidence
+                  : undefined;
+      return hasOneId(items, target.itemId);
+    }
+    case "sources": {
+      const parsed = sourcesModuleSchema.safeParse(payload);
+      if (!parsed.success) return false;
+      if (target.section === "gaps") return hasOneId(parsed.data.gaps, target.itemId);
+      if (target.section !== "relations") return false;
+      const matches = parsed.data.relations.filter(
+        (relation) => `${relation.claimId}:${relation.sourceId}` === target.itemId,
+      );
+      if (matches.length !== 1) return false;
+      const [relation] = matches;
+      return hasOneId(parsed.data.claims, relation.claimId)
+        && hasOneId(parsed.data.sources, relation.sourceId);
+    }
+    case "risks": {
+      const parsed = risksModuleSchema.safeParse(payload);
+      return parsed.success && target.section === "items" && hasOneId(parsed.data.items, target.itemId);
+    }
+    case "reflection":
+      return false;
+  }
+}
+
+function hasOneId(items: readonly { id: string }[] | undefined, id: string): boolean {
+  return (items?.filter((item) => item.id === id).length ?? 0) === 1;
+}
 
 export type { AnalysisJobStatus, ReportModuleStatus } from "./job-state";
