@@ -5,6 +5,7 @@ import {
   overviewModuleSchema,
   perspectivesModuleSchema,
   reflectionModuleSchema,
+  reportModuleSourceIds,
   risksModuleSchema,
   sourcesModuleSchema,
 } from "@/features/analysis/domain/contracts";
@@ -62,16 +63,19 @@ export function targetedReviewSchema(
       summary: z.string().min(1),
     }).strict().optional(),
   }).strict().superRefine((value, context) => {
-    const replacementSources = moduleType === "sources" && value.replacement
-      ? sourcesModuleSchema.safeParse(value.replacement.module)
-      : undefined;
-    const replacementSourceIds = new Set(
-      replacementSources?.success
-        ? replacementSources.data.sources.map((source) => source.id)
-        : [],
-    );
+    if (value.replacement) {
+      reportModuleSourceIds(moduleType, value.replacement.module).forEach((sourceId) => {
+        if (!allowedEvidenceSourceIds.has(sourceId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["replacement", "module"],
+            message: "source reference must already belong to the report",
+          });
+        }
+      });
+    }
     value.replacement?.newEvidenceSourceIds.forEach((sourceId, index) => {
-      if (!allowedEvidenceSourceIds.has(sourceId) && !replacementSourceIds.has(sourceId)) {
+      if (!allowedEvidenceSourceIds.has(sourceId)) {
         context.addIssue({
           code: "custom",
           path: ["replacement", "newEvidenceSourceIds", index],

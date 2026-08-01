@@ -8,10 +8,12 @@ import type {
 } from "@/features/analysis/domain/contracts";
 import {
   argumentModuleSchema,
+  isTargetScopedModuleReplacement,
   moduleTypes,
   overviewModuleSchema,
   perspectivesModuleSchema,
   reflectionModuleSchema,
+  reportModuleSourceIds,
   reportRevisionChangeSchema,
   risksModuleSchema,
   sourcesModuleSchema,
@@ -258,22 +260,46 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         return { completed: false };
       }
 
+      const [currentModule] = await tx
+        .select({ payload: reportModules.payload })
+        .from(reportModules)
+        .where(and(
+          eq(reportModules.reportId, input.reportId),
+          eq(reportModules.moduleType, input.module.moduleType),
+          eq(reportModules.version, input.module.expectedVersion),
+        ))
+        .for("update")
+        .limit(1);
+      if (
+        !currentModule
+        || !isTargetScopedModuleReplacement(
+          currentModule.payload as CompleteRevision["module"]["payload"],
+          input.module.payload,
+          message.target,
+        )
+      ) {
+        return { completed: false };
+      }
+
       const evidenceSourceIds = [
         ...new Set(input.changes.flatMap((change) => change.newEvidenceSourceIds)),
       ];
-      if (evidenceSourceIds.length) {
+      const replacementSourceIds = reportModuleSourceIds(
+        input.module.moduleType,
+        input.module.payload,
+      );
+      if (evidenceSourceIds.length || replacementSourceIds.length) {
         const persistedSources = await tx
           .select({ sourceKey: reportSources.sourceKey })
           .from(reportSources)
           .where(eq(reportSources.reportId, input.reportId));
-        const replacementSourceIds = input.module.moduleType === "sources"
-          ? input.module.payload.sources.map((source) => source.id)
-          : [];
-        const allowedSourceIds = new Set([
-          ...persistedSources.map((source) => source.sourceKey),
-          ...replacementSourceIds,
-        ]);
-        if (!evidenceSourceIds.every((sourceId) => allowedSourceIds.has(sourceId))) {
+        const persistedSourceIds = new Set(
+          persistedSources.map((source) => source.sourceKey),
+        );
+        if (
+          !evidenceSourceIds.every((sourceId) => persistedSourceIds.has(sourceId))
+          || !replacementSourceIds.every((sourceId) => persistedSourceIds.has(sourceId))
+        ) {
           return { completed: false };
         }
       }

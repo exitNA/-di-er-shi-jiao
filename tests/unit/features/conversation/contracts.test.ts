@@ -29,7 +29,7 @@ describe("targeted review contract", () => {
     }).success).toBe(true);
   });
 
-  it("accepts evidence metadata introduced by a sources replacement", () => {
+  it("rejects evidence metadata introduced by a sources replacement", () => {
     const schema = conversationContracts.targetedReviewSchema("sources", new Set());
     const newSource = {
       id: "source-new",
@@ -42,7 +42,7 @@ describe("targeted review contract", () => {
       excerpt: "新证据摘要",
     };
 
-    expect(schema.safeParse({
+    const output = {
       responseText: "新来源支持本次修订。",
       replacement: {
         module: {
@@ -55,6 +55,42 @@ describe("targeted review contract", () => {
         newEvidenceSourceIds: [newSource.id],
         summary: "更新来源。",
       },
-    }).success).toBe(true);
+    };
+
+    expect(schema.safeParse(output).success).toBe(false);
+    expect(schema.safeParse({
+      ...output,
+      replacement: { ...output.replacement, newEvidenceSourceIds: [] },
+    }).success).toBe(false);
+  });
+
+  it("rejects undeclared non-persisted source references in replacement content", () => {
+    const schema = conversationContracts.targetedReviewSchema(
+      "overview",
+      new Set(["source-persisted"]),
+    );
+    const externalClaim = {
+      id: "claim-1",
+      text: "LLM 引用了未持久化来源。",
+      origin: "external_source" as const,
+      sourceId: "source-hallucinated",
+      confidence: { score: 0.8, rationale: "声称来自外部来源" },
+    };
+
+    expect(schema.safeParse({
+      responseText: "复核完成。",
+      replacement: {
+        module: {
+          coreClaims: [externalClaim],
+          mainDisputes: [],
+          topRisks: [],
+          keyUnknowns: [],
+          safetyNotice: null,
+        },
+        reason: "引用外部来源。",
+        newEvidenceSourceIds: [],
+        summary: "更新主张。",
+      },
+    }).success).toBe(false);
   });
 });

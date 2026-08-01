@@ -3,6 +3,7 @@ import { getLogger } from "@logtape/logtape";
 
 import {
   argumentModuleSchema,
+  isTargetScopedModuleReplacement,
   overviewModuleSchema,
   perspectivesModuleSchema,
   reflectionModuleSchema,
@@ -126,6 +127,13 @@ export class RevisionOrchestrator {
         return { status: "completed" };
       }
       const parsedModule = moduleSchemas[message.target.moduleType].parse(replacement.module);
+      if (!isTargetScopedModuleReplacement(
+        current.payload as BaselineDraft[ReportModuleType],
+        parsedModule,
+        message.target,
+      )) {
+        return this.recover(input, snapshot.reportId, leaseId);
+      }
       const completed = await this.repository.completeRevision({
         jobId: input.jobId,
         reportId: snapshot.reportId,

@@ -4,6 +4,7 @@ import {
   baselineDraftSchema,
   conversationMessageSchema,
   externalSourceSchema,
+  isTargetScopedModuleReplacement,
   reportItemTargetSchema,
   resolveReportItemTarget,
   risksModuleSchema,
@@ -234,6 +235,74 @@ describe("analysis report contracts", () => {
       section: "items",
       itemId: risk.id,
     })).toBe(false);
+  });
+
+  it("accepts only target-scoped risk replacements", () => {
+    const risk = (id: string, explanation: string) => ({
+      id,
+      type: "overgeneralization" as const,
+      sourceMaterialQuote: `${id} 原文。`,
+      explanation,
+      confidence: { score: 0.8, rationale: "存在绝对化表达" },
+    });
+    const target = { moduleType: "risks", section: "items", itemId: "risk-1" } as const;
+    const current = { items: [risk("risk-1", "目标解释"), risk("risk-2", "相邻解释")] };
+
+    expect(isTargetScopedModuleReplacement(current, {
+      items: [risk("risk-2", "相邻解释")],
+    }, target)).toBe(true);
+    expect(isTargetScopedModuleReplacement({
+      items: [risk("risk-2", "相邻解释")],
+    }, {
+      items: [risk("risk-2", "相邻解释")],
+    }, target)).toBe(false);
+    expect(isTargetScopedModuleReplacement(current, {
+      items: [risk("risk-2", "被静默修改")],
+    }, target)).toBe(false);
+    expect(isTargetScopedModuleReplacement(current, {
+      items: [risk("risk-2", "相邻解释"), risk("risk-3", "静默新增")],
+    }, target)).toBe(false);
+    expect(isTargetScopedModuleReplacement(current, {
+      items: [risk("risk-2", "相邻解释")],
+      unexpectedMetadata: "静默新增",
+    } as typeof current, target)).toBe(false);
+    expect(isTargetScopedModuleReplacement(current, {
+      items: [
+        risk("risk-1", "目标解释 A"),
+        risk("risk-1", "目标解释 B"),
+        risk("risk-2", "相邻解释"),
+      ],
+    }, target)).toBe(false);
+  });
+
+  it("treats source metadata as outside a targeted gap replacement", () => {
+    const source = {
+      id: "source-1",
+      title: "持久化来源",
+      url: "https://example.com/report",
+      domain: "example.com",
+      publisher: "Example",
+      publishedAt: null,
+      qualityTier: 2,
+      excerpt: "摘要",
+    };
+    const gap = {
+      ...sourceMaterialStatement,
+      id: "gap-1",
+      text: "缺少近期数据。",
+    };
+    const target = { moduleType: "sources", section: "gaps", itemId: gap.id } as const;
+    const current = { claims: [], sources: [source], relations: [], gaps: [gap] };
+
+    expect(isTargetScopedModuleReplacement(current, {
+      ...current,
+      gaps: [{ ...gap, text: "已收窄数据缺口。" }],
+    }, target)).toBe(true);
+    expect(isTargetScopedModuleReplacement(current, {
+      ...current,
+      sources: [{ ...source, title: "LLM 改写的来源" }],
+      gaps: [],
+    }, target)).toBe(false);
   });
 
   it("resolves a source relation by its unique claim and source pair", () => {

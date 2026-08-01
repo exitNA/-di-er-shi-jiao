@@ -240,6 +240,66 @@ describe("conversation revision flow", () => {
     expect(review).not.toHaveBeenCalled();
   });
 
+  it("rejects an Agent replacement that changes outside the challenged target", async () => {
+    const fixture = await createCompletedRiskReport();
+    const targetRisk = {
+      id: "risk-1",
+      type: "overgeneralization" as const,
+      sourceMaterialQuote: "30 岁以后考公是获得稳定人生的唯一选择。",
+      explanation: "将单一选择扩大为唯一选择。",
+      confidence: { score: 0.8, rationale: "存在绝对化表述" },
+    };
+    const siblingRisk = {
+      id: "risk-2",
+      type: "data_misleading" as const,
+      sourceMaterialQuote: "稳定人生。",
+      explanation: "没有数据支持稳定程度。",
+      confidence: { score: 0.7, rationale: "缺少量化数据" },
+    };
+    await repository.saveModule({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      reportId: fixture.reportId,
+      moduleType: "risks",
+      status: "completed",
+      payload: { items: [targetRisk, siblingRisk] },
+      expectedVersion: 1,
+      nextVersion: 2,
+      now,
+    });
+    const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });
+    vi.spyOn(experts, "reviewTarget").mockResolvedValueOnce({
+      value: {
+        responseText: "不应保存越界修订。",
+        replacement: {
+          module: {
+            items: [{ ...siblingRisk, explanation: "被 Agent 静默改写。" }],
+          },
+          reason: "删除目标风险。",
+          newEvidenceSourceIds: [],
+          summary: "越界修改了相邻风险。",
+        },
+      },
+      usage: { inputTokens: 1, outputTokens: 1, latencyMs: 1 },
+    });
+    const orchestrator = new RevisionOrchestrator(experts, repository, () => now, recorder);
+
+    const result = await submitChallenge({
+      userId: fixture.userId,
+      jobId: fixture.jobId,
+      target,
+      content: "只复核当前风险。",
+      idempotencyKey: "challenge-outside-target",
+    }, repository, orchestrator, () => now, recorder);
+
+    expect(result).toMatchObject({ ok: true, status: "recoverable" });
+    await expect(repository.getOwnedSnapshot(fixture.userId, fixture.jobId)).resolves.toMatchObject({
+      currentVersion: 0,
+      revisions: [],
+      modules: { risks: { version: 2, payload: { items: [targetRisk, siblingRisk] } } },
+    });
+  });
+
   it("rejects revision evidence IDs that are not persisted report sources", async () => {
     const fixture = await createCompletedRiskReport();
     const experts = new FakeExpertSuite({ delaysMs: { revision: 0 } });

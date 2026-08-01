@@ -240,6 +240,149 @@ export type AnalysisSnapshot = {
   >;
 };
 
+const targetSections: Record<ReportModuleType, readonly string[]> = {
+  overview: ["coreClaims", "mainDisputes", "topRisks", "keyUnknowns"],
+  argument: [
+    "claims",
+    "evidence",
+    "assumptions",
+    "reasoningSteps",
+    "conclusions",
+    "gaps",
+    "factualStatements",
+  ],
+  perspectives: [
+    "supporting",
+    "opposing",
+    "stakeholders",
+    "disputes",
+    "unknowns",
+    "changeEvidence",
+  ],
+  sources: ["relations", "gaps"],
+  risks: ["items"],
+  reflection: [],
+};
+
+export function isTargetScopedModuleReplacement(
+  current: BaselineDraft[ReportModuleType],
+  replacement: BaselineDraft[ReportModuleType],
+  target: ReportItemTarget,
+): boolean {
+  const currentProjection = withoutTarget(current, target, true);
+  const replacementProjection = withoutTarget(replacement, target, false);
+  return currentProjection !== undefined
+    && replacementProjection !== undefined
+    && sameJsonValue(currentProjection, replacementProjection);
+}
+
+export function reportModuleSourceIds(
+  moduleType: ReportModuleType,
+  payload: BaselineDraft[ReportModuleType],
+): string[] {
+  const sourceIds = new Set<string>();
+  collectSourceIdFields(payload, sourceIds);
+
+  if (moduleType === "sources") {
+    const rawPayload = payload as unknown as Record<string, unknown>;
+    const sources = rawPayload.sources;
+    if (Array.isArray(sources)) {
+      sources.forEach((source) => {
+        const sourceId = itemId(source);
+        if (sourceId) sourceIds.add(sourceId);
+      });
+    }
+  }
+
+  return [...sourceIds];
+}
+
+function withoutTarget(
+  payload: BaselineDraft[ReportModuleType],
+  target: ReportItemTarget,
+  requireTarget: boolean,
+): Record<string, unknown> | undefined {
+  if (!targetSections[target.moduleType].includes(target.section)) return undefined;
+  if (!parseModulePayload(target.moduleType, payload)) return undefined;
+  const rawPayload = payload as unknown as Record<string, unknown>;
+  const items = rawPayload[target.section];
+  if (!Array.isArray(items)) return undefined;
+
+  let matches = 0;
+  const remaining = items.filter((item) => {
+    const matchesTarget = target.moduleType === "sources" && target.section === "relations"
+      ? relationTargetId(item) === target.itemId
+      : itemId(item) === target.itemId;
+    if (matchesTarget) matches += 1;
+    return !matchesTarget;
+  });
+  if (matches > 1 || (requireTarget && matches !== 1)) return undefined;
+  return { ...rawPayload, [target.section]: remaining };
+}
+
+function parseModulePayload(
+  moduleType: ReportModuleType,
+  payload: BaselineDraft[ReportModuleType],
+): Record<string, unknown> | undefined {
+  const parsed = {
+    overview: overviewModuleSchema,
+    argument: argumentModuleSchema,
+    perspectives: perspectivesModuleSchema,
+    sources: sourcesModuleSchema,
+    risks: risksModuleSchema,
+    reflection: reflectionModuleSchema,
+  }[moduleType].safeParse(payload);
+  return parsed.success
+    ? parsed.data as unknown as Record<string, unknown>
+    : undefined;
+}
+
+function itemId(item: unknown): string | undefined {
+  return isRecord(item) && typeof item.id === "string" ? item.id : undefined;
+}
+
+function relationTargetId(item: unknown): string | undefined {
+  return isRecord(item)
+    && typeof item.claimId === "string"
+    && typeof item.sourceId === "string"
+    ? `${item.claimId}:${item.sourceId}`
+    : undefined;
+}
+
+function collectSourceIdFields(value: unknown, sourceIds: Set<string>): void {
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectSourceIdFields(item, sourceIds));
+    return;
+  }
+  if (!isRecord(value)) return;
+  Object.entries(value).forEach(([key, item]) => {
+    if (key === "sourceId" && typeof item === "string") {
+      sourceIds.add(item);
+      return;
+    }
+    collectSourceIdFields(item, sourceIds);
+  });
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length
+      && left.every((value, index) => sameJsonValue(value, right[index]));
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) =>
+      key === rightKeys[index] && sameJsonValue(left[key], right[key])
+    );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function resolveReportItemTarget(
   modules: AnalysisSnapshot["modules"],
   target: ReportItemTarget,
