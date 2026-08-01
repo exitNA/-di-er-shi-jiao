@@ -29,7 +29,7 @@ it("shows branded navigation for an authenticated reader", async () => {
     "href",
     "/",
   );
-  expect(screen.getByRole("link", { name: "历史记录" })).toHaveAttribute(
+  expect(screen.getByRole("link", { name: "思考档案" })).toHaveAttribute(
     "href",
     "/history",
   );

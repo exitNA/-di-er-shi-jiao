@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowUpRight, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -57,9 +58,9 @@ export function AnalysisForm({ content: controlledContent, onContentChange, comp
   }
 
   return (
-    <form className={compact ? "mt-10 rounded-2xl border border-border bg-white p-2 shadow-sm" : "mt-10 space-y-4"} onSubmit={submit}>
-      <label className="block text-sm font-medium" htmlFor="analysis-content">
-        想分析的内容
+    <form className={compact ? "mt-10 overflow-hidden rounded-[1.75rem] border border-border bg-white/90 p-2 shadow-[0_20px_55px_-30px_rgba(22,58,54,0.38)]" : "mt-10 space-y-4"} onSubmit={submit}>
+      <label className={compact ? "flex items-center gap-2 px-4 pt-3 text-sm font-semibold text-primary" : "block text-sm font-medium"} htmlFor="analysis-content">
+        {compact ? <Sparkles size={15} aria-hidden="true" /> : null} 想分析的内容
       </label>
       <textarea
         id="analysis-content"
@@ -72,10 +73,10 @@ export function AnalysisForm({ content: controlledContent, onContentChange, comp
         maxLength={maxLength}
         rows={compact ? 3 : 10}
         placeholder={compact ? "输入你想分析的内容（Shift + Enter 换行）" : undefined}
-        className={compact ? "w-full resize-none bg-transparent p-3 leading-7 outline-none" : "w-full rounded-lg border border-neutral-300 bg-white p-4 leading-7"}
+        className={compact ? "min-h-40 w-full resize-none bg-transparent px-4 py-3 text-base leading-7 outline-none placeholder:text-ink-faint/70" : "w-full rounded-lg border border-neutral-300 bg-white p-4 leading-7"}
         aria-describedby="analysis-content-help analysis-content-count"
       />
-      <div className="flex flex-wrap items-center justify-between gap-2 px-2 text-sm text-neutral-600">
+      <div className={compact ? "flex flex-wrap items-center justify-between gap-3 border-t border-border/70 px-4 py-3 text-sm text-ink-faint" : "flex flex-wrap items-center justify-between gap-2 px-2 text-sm text-neutral-600"}>
         <p id="analysis-content-help">支持 1–20,000 个字符，请粘贴需要核查的完整文本。</p>
         <output id="analysis-content-count" aria-live="polite">{content.length.toLocaleString("en-US")} / 20,000</output>
       </div>
@@ -83,10 +84,10 @@ export function AnalysisForm({ content: controlledContent, onContentChange, comp
       <button
         type="submit"
         disabled={pending || isBlank}
-        aria-label="开始分析"
-        className={compact ? "ml-auto flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-900 text-white disabled:opacity-30" : "rounded-lg bg-neutral-900 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"}
+        aria-label="展开第二视角"
+        className={compact ? "ml-auto flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-35" : "rounded-lg bg-neutral-900 px-5 py-3 font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"}
       >
-        {pending ? "正在提交…" : compact ? "↑" : "开始分析"}
+        {pending ? "正在展开…" : compact ? <>展开第二视角 <ArrowUpRight size={16} aria-hidden="true" /></> : "开始分析"}
       </button>
     </form>
   );

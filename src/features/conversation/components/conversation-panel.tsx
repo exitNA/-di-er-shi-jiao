@@ -91,13 +91,13 @@ export function ConversationPanel({
   return (
     <section
       id="conversation-panel"
-      className="rounded-xl border border-neutral-300 bg-white p-6"
+      className="rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"
       aria-labelledby="conversation-panel-heading"
     >
-      <h3 id="conversation-panel-heading" className="text-xl font-semibold">
+      <h3 id="conversation-panel-heading" className="font-display text-2xl font-semibold">
         报告质疑
       </h3>
-      <p className="mt-2 text-sm text-neutral-600">
+      <p className="mt-2 text-sm leading-6 text-ink-faint">
         {selectedTarget
           ? `当前条目：${reportTargetLabel(selectedTarget)}`
           : "请先从报告中选择要质疑的条目。"}
@@ -106,7 +106,7 @@ export function ConversationPanel({
       {messages.length ? (
         <ol className="mt-5 space-y-3">
           {messages.map((message) => (
-            <li key={message.id} className="rounded-lg bg-neutral-50 p-4">
+            <li key={message.id} className="rounded-2xl bg-forest-soft/65 p-4">
               <p className="text-sm font-medium">
                 {message.role === "user" ? "你的质疑" : "第二视角 Agent"}
               </p>

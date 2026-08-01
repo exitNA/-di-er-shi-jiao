@@ -12,15 +12,15 @@ export default async function HistoryPage() {
   const items = await getContainer().analysisRepository.listOwnedHistory(user.id, 20);
 
   return (
-    <main className="min-h-screen px-6 py-16">
-      <section className="w-full max-w-3xl">
+    <main className="min-h-screen px-4 py-14 sm:px-6 sm:py-20">
+      <section className="mx-auto w-full max-w-3xl">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium tracking-[0.2em] text-neutral-500">第二视角</p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight">历史记录</h1>
+            <p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">思考桌 · 已保存的判断过程</p>
+            <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight">思考档案</h1>
           </div>
-          <Link className="underline" href="/">
-            返回输入页
+          <Link className="rounded-full border border-border bg-white/60 px-4 py-2 text-sm font-medium transition hover:border-secondary" href="/">
+            新建分析
           </Link>
         </header>
         <HistoryList items={items} />

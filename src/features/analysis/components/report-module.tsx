@@ -68,20 +68,20 @@ export function ReportModule({
       <section
         id={id}
         tabIndex={-1}
-        className="scroll-mt-6 rounded-xl border border-neutral-300 bg-white p-6"
+        className="relative scroll-mt-6 rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"
         aria-labelledby={`${id}-heading`}
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <h2 id={`${id}-heading`} className="text-2xl font-semibold">
+          <h2 id={`${id}-heading`} className="font-display text-2xl font-semibold">
             {title}
           </h2>
-          <p className="text-sm text-neutral-600">{statusText}</p>
+          <p className="rounded-full bg-mist px-2.5 py-1 text-xs font-medium text-primary">{statusText}</p>
         </div>
         {children ? <div className="mt-6 space-y-6">{children}</div> : null}
         {status === "failed" && onRetry ? (
           <button
             type="button"
-            className="mt-5 rounded-lg border border-neutral-900 px-4 py-2 font-medium disabled:opacity-50"
+            className="mt-5 rounded-full border border-primary px-4 py-2 text-sm font-medium text-primary disabled:opacity-50"
             disabled={retrying}
             onClick={() => void retry()}
           >

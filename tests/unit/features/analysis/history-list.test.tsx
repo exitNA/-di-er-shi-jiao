@@ -50,7 +50,7 @@ it("shows newest reports first with status and a resume link", () => {
   const reports = screen.getAllByRole("listitem");
   expect(within(reports[0]).getByText("较新的报告")).toBeInTheDocument();
   expect(within(reports[0]).getByText("已完成")).toBeInTheDocument();
-  expect(within(reports[0]).getByRole("link", { name: "打开报告" })).toHaveAttribute(
+  expect(within(reports[0]).getByRole("link", { name: "继续查看" })).toHaveAttribute(
     "href",
     "/analysis/newest",
   );

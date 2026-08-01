@@ -78,10 +78,10 @@ export function AuthDialog() {
       >
         登录
       </Button>
-      <DialogContent className="max-w-md bg-paper">
+      <DialogContent className="max-w-md rounded-[1.75rem] border-border bg-paper p-7 shadow-2xl shadow-primary/20">
         <DialogHeader>
-          <DialogTitle>{registering ? "创建账号" : "登录"}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle className="font-display text-3xl">{registering ? "创建账号" : "登录"}</DialogTitle>
+          <DialogDescription className="leading-6 text-ink-faint">
             {registering ? "开始生成你的认知体检报告。" : "继续你的独立思考。"}
           </DialogDescription>
         </DialogHeader>
@@ -89,7 +89,7 @@ export function AuthDialog() {
         <button
           type="button"
           onClick={switchMode}
-          className="text-sm text-ink-soft underline"
+          className="text-left text-sm font-medium text-secondary underline underline-offset-4"
         >
           {registering ? "已有账号？登录" : "创建账号"}
         </button>

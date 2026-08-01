@@ -53,10 +53,10 @@ export function RevisionHistory({
 }) {
   return (
     <section
-      className="rounded-xl border border-neutral-300 bg-white p-6"
+      className="rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"
       aria-labelledby="revision-history-heading"
     >
-      <h3 id="revision-history-heading" className="text-xl font-semibold">
+      <h3 id="revision-history-heading" className="font-display text-2xl font-semibold">
         修订记录
       </h3>
       {revisions.length ? (
@@ -70,7 +70,7 @@ export function RevisionHistory({
               return (
                 <li
                   key={`${revision.id}-${index}`}
-                  className="rounded-lg bg-neutral-50 p-4 text-sm leading-6"
+                  className="rounded-2xl bg-apricot/25 p-4 text-sm leading-6"
                 >
                   <a
                     className="font-medium underline"
@@ -93,7 +93,7 @@ export function RevisionHistory({
           )}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-neutral-600">报告尚无修订。</p>
+        <p className="mt-4 text-sm text-ink-faint">报告尚无修订。</p>
       )}
     </section>
   );

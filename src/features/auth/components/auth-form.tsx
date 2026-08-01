@@ -49,7 +49,7 @@ export function AuthForm({
   }
 
   return (
-    <form className="mt-8 space-y-5" onSubmit={submit}>
+    <form className="mt-7 space-y-5" onSubmit={submit}>
       <div>
         <label className="block text-sm font-medium" htmlFor={`${mode}-username`}>用户名</label>
         <input
@@ -62,7 +62,7 @@ export function AuthForm({
           maxLength={32}
           pattern="[A-Za-z0-9_]+"
           required
-          className="mt-2 w-full rounded-xl border border-border bg-paper px-3.5 py-2.5"
+          className="mt-2 w-full rounded-2xl border border-border bg-white/65 px-3.5 py-3 outline-none transition focus:border-secondary"
         />
       </div>
       <div>
@@ -77,7 +77,7 @@ export function AuthForm({
           minLength={6}
           maxLength={128}
           required
-          className="mt-2 w-full rounded-xl border border-border bg-paper px-3.5 py-2.5"
+          className="mt-2 w-full rounded-2xl border border-border bg-white/65 px-3.5 py-3 outline-none transition focus:border-secondary"
         />
       </div>
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}

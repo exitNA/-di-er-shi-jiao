@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Compass, Radio } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ArgumentModule } from "./argument-module";
@@ -81,36 +82,32 @@ export function AnalysisWorkspace({
   const risks = snapshot.modules.risks;
   const reflection = snapshot.modules.reflection;
   return (
-    <main className="min-h-screen px-6 py-12">
-      <div className="mx-auto w-full max-w-4xl">
+    <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-10">
+      <div className="mx-auto w-full max-w-5xl">
         <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium tracking-[0.2em] text-neutral-500">
-              第二视角
-            </p>
-            <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-              认知体检报告
-            </h1>
+          <div className="flex items-start gap-3">
+            <span className="mt-1 grid size-9 place-items-center rounded-2xl bg-mist text-primary"><Compass size={19} aria-hidden="true" /></span>
+            <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 分析工作台</p>
+              <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">认知体检报告</h1></div>
           </div>
-          <nav className="flex gap-4" aria-label="报告导航">
-            <Link className="underline" href="/">
+          <nav className="flex gap-2" aria-label="报告导航">
+            <Link className="rounded-full border border-border bg-white/60 px-3.5 py-2 text-sm font-medium transition hover:border-secondary" href="/">
               返回输入页
             </Link>
-            <Link className="underline" href="/history">
-              历史记录
+            <Link className="rounded-full border border-border bg-white/60 px-3.5 py-2 text-sm font-medium transition hover:border-secondary" href="/history">
+              思考档案
             </Link>
           </nav>
         </header>
 
-        <div className="mt-8 rounded-lg border border-neutral-300 bg-white p-5">
-          <p className="font-medium">{progressText}</p>
-          <p className="mt-1 text-sm text-neutral-600">{connectionText}</p>
-          <p className="mt-4 leading-7 text-neutral-700">
+        <div className="mt-8 overflow-hidden rounded-[1.75rem] border border-border bg-white/75 shadow-[0_20px_45px_-35px_rgba(22,58,54,0.35)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 bg-mist/55 px-5 py-3 text-sm"><p className="flex items-center gap-2 font-semibold text-primary"><Radio size={15} aria-hidden="true" />{progressText}</p><p className="font-mono text-xs text-ink-faint">{connectionText}</p></div>
+          <p className="px-5 py-5 leading-7 text-ink">
             {snapshot.materialPreview}
           </p>
         </div>
 
-        <div className="mt-6 space-y-6">
+        <div className="mt-7 space-y-4 border-l border-border pl-4 sm:pl-6">
           <ReportModule
             id="report-module-overview"
             moduleType="overview"
@@ -187,7 +184,7 @@ export function AnalysisWorkspace({
           </ReportModule>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className="mt-7 grid gap-4 lg:grid-cols-2">
           <ConversationPanel
             jobId={snapshot.jobId}
             messages={snapshot.messages}
@@ -200,7 +197,7 @@ export function AnalysisWorkspace({
           />
         </div>
 
-        <p className="mt-8 rounded-lg bg-neutral-100 p-4 text-sm leading-6 text-neutral-700">
+        <p className="mt-8 rounded-2xl bg-forest-soft px-5 py-4 text-sm leading-6 text-ink-faint">
           {disclaimer}
         </p>
       </div>
