@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function AuthForm({ mode }: { mode: "register" | "login" }) {
+export function AuthForm({
+  mode,
+  onSuccess,
+}: {
+  mode: "register" | "login";
+  onSuccess?: () => void;
+}) {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -24,8 +30,12 @@ export function AuthForm({ mode }: { mode: "register" | "login" }) {
       });
       const body = await response.json().catch(() => null) as { error?: string } | null;
       if (response.ok) {
-        router.push("/");
-        router.refresh();
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.push("/");
+          router.refresh();
+        }
         return;
       }
       setError(body?.error ?? "请求失败，请稍后重试");
