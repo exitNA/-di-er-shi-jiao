@@ -57,7 +57,9 @@ test("resumes an interrupted job without replacing completed module versions", a
 });
 
 async function register(page: Page, username: string) {
-  await page.goto("/register");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "创建账号" }).click();
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill("a secure recovery password");
   await page.getByRole("button", { name: "创建账号" }).click();

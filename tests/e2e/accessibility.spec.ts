@@ -52,8 +52,9 @@ test("supports the report journey by keyboard with stable accessible updates", a
     await route.fulfill({ response, json: body });
   });
 
-  await page.goto("/register");
-  await page.keyboard.press("Tab");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByLabel("用户名")).toBeFocused();
   await page.keyboard.type("keyboard_reader");
   await page.keyboard.press("Tab");

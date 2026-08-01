@@ -35,7 +35,9 @@ test("returns 404 for another user's snapshot, events, and retry", async ({
 });
 
 async function register(page: Page, username: string) {
-  await page.goto("/register");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "创建账号" }).click();
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill("a secure ownership password");
   await page.getByRole("button", { name: "创建账号" }).click();

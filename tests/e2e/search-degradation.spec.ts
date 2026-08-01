@@ -32,7 +32,9 @@ test("keeps content usable while sources fail and completes after retry", async 
 });
 
 async function register(page: Page) {
-  await page.goto("/register");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "创建账号" }).click();
   await page.getByLabel("用户名").fill("source_retry_reader");
   await page.getByLabel("密码").fill("a secure source retry password");
   await page.getByRole("button", { name: "创建账号" }).click();

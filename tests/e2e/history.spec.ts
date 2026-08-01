@@ -1,7 +1,9 @@
 import { expect, test } from "./fixtures";
 
 test("reopens an older saved report from owned history", async ({ page }) => {
-  await page.goto("/register");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "创建账号" }).click();
   await page.getByLabel("用户名").fill("history_reader");
   await page.getByLabel("密码").fill("a secure history password");
   await page.getByRole("button", { name: "创建账号" }).click();

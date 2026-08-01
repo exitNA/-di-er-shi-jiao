@@ -3,7 +3,9 @@ import { expect, test } from "./fixtures";
 test("renders modules progressively and restores them after reload", async ({
   page,
 }) => {
-  await page.goto("/register");
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录" }).click();
+  await page.getByRole("button", { name: "创建账号" }).click();
   await page.getByLabel("用户名").fill("baseline_reader");
   await page.getByLabel("密码").fill("a secure baseline password");
   await page.getByRole("button", { name: "创建账号" }).click();
