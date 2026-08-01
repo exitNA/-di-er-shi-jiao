@@ -41,16 +41,16 @@ export function AgentWorkspaceLayout({
   }
 
   return (
-    <div ref={container}>
+    <div ref={container} className="h-full min-h-0">
       {!isDesktop ? <><div className="mb-3 flex rounded-xl border border-border bg-white p-1" role="tablist" aria-label="工作区视图">
         <button type="button" role="tab" aria-selected={mobileView === "conversation"} className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mobileView === "conversation" ? "bg-forest-soft text-primary" : "text-ink-faint"}`} onClick={() => setMobileView("conversation")}>对话</button>
         <button type="button" role="tab" aria-selected={mobileView === "findings"} className={`flex-1 rounded-lg px-3 py-2 text-sm font-medium ${mobileView === "findings" ? "bg-forest-soft text-primary" : "text-ink-faint"}`} onClick={() => setMobileView("findings")}>当前发现</button>
-      </div><div>{mobileView === "conversation" ? conversation : findings}</div></> : <div className="grid min-h-[calc(100vh-9rem)]" style={{ gridTemplateColumns: `${leftWidth}fr 13px ${100 - leftWidth}fr` }}>
-        <div className="min-w-0 pr-6">{conversation}</div>
+      </div><div className="h-[calc(100%_-_3.5rem)] min-h-0">{mobileView === "conversation" ? conversation : findings}</div></> : <div className="grid h-full min-h-0" style={{ gridTemplateColumns: `${leftWidth}fr 13px ${100 - leftWidth}fr` }}>
+        <div className="min-w-0 min-h-0 overflow-hidden pr-6">{conversation}</div>
         <div role="separator" tabIndex={0} aria-label="调整对话与发现区域宽度" aria-orientation="vertical" aria-valuemin={28} aria-valuemax={58} aria-valuenow={leftWidth} className="group relative cursor-col-resize outline-none" onKeyDown={resizeWithKeyboard} onPointerDown={startResize} onPointerMove={(event) => event.currentTarget.hasPointerCapture(event.pointerId) && updateWidth(event.clientX)}>
           <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border transition group-hover:w-0.5 group-hover:bg-secondary group-focus-visible:w-0.5 group-focus-visible:bg-secondary" />
         </div>
-        <div className="min-w-0 pl-6">{findings}</div>
+        <div className="min-w-0 min-h-0 overflow-y-auto overscroll-contain pl-6 pr-2">{findings}</div>
       </div>}
     </div>
   );

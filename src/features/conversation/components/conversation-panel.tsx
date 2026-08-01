@@ -91,7 +91,7 @@ export function ConversationPanel({
   return (
     <section
       id="conversation-panel"
-      className="rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"
+      className="flex h-full min-h-0 flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"
       aria-labelledby="conversation-panel-heading"
     >
       <h3 id="conversation-panel-heading" className="font-display text-2xl font-semibold">
@@ -104,7 +104,7 @@ export function ConversationPanel({
       </p>
 
       {messages.length ? (
-        <ol className="mt-5 space-y-3">
+        <ol className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1">
           {messages.map((message) => (
             <li key={message.id} className="rounded-2xl bg-forest-soft/65 p-4">
               <p className="text-sm font-medium">
@@ -135,7 +135,7 @@ export function ConversationPanel({
         </ol>
       ) : null}
 
-      <form className="mt-5 space-y-3" onSubmit={onSubmit}>
+      <form className="mt-5 shrink-0 space-y-3" onSubmit={onSubmit}>
         <label className="block text-sm font-medium" htmlFor="challenge-content">
           继续追问
         </label>

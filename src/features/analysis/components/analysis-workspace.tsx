@@ -88,13 +88,13 @@ export function AnalysisWorkspace({
   const risks = snapshot.modules.risks;
   const reflection = snapshot.modules.reflection;
   return (
-    <main className="min-h-[calc(100vh-5rem)] px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-[1440px]">
+    <main className="h-[calc(100dvh-4.5rem)] overflow-hidden px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-full w-full max-w-[1440px] min-h-0 flex-col">
         <header className="mb-6 flex items-end justify-between gap-4">
           <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 工作台</p><h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">与第二视角一起推理</h1></div>
           <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
         </header>
-        <AgentWorkspaceLayout
+        <div className="min-h-0 flex-1"><AgentWorkspaceLayout
           conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><div className="mt-5 ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><CurrentAction modules={snapshot.modules} /><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
           findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
           <ReportModule
@@ -172,7 +172,7 @@ export function AnalysisWorkspace({
             ) : undefined}
           </ReportModule>
           <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section></>}
-        />
+        /></div>
       </div>
     </main>
   );
