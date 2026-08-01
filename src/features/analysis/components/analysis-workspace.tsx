@@ -23,20 +23,16 @@ import {
 } from "@/features/analysis/domain/contracts";
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
-import { RevisionHistory } from "@/features/conversation/components/revision-history";
 import { AgentWorkspaceLayout } from "./agent-workspace-layout";
 import { CurrentFindingsPanel } from "./current-findings-panel";
 
 const disclaimer =
   "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。";
 
-function AgentActivity({ modules }: { modules: AnalysisSnapshot["modules"] }) {
-  const steps = [
-    ["拆解原文观点", modules.overview.status],
-    ["核对论据与隐含假设", modules.argument.status],
-    ["寻找不同立场", modules.perspectives.status],
-  ] as const;
-  return <div className="mt-5 space-y-4"><div className="max-w-[92%] rounded-2xl rounded-tl-sm bg-forest-soft px-4 py-3 text-sm leading-6 text-ink"><p className="mb-1 text-xs font-semibold text-primary">第二视角 Agent</p>我先把这段内容拆成可以验证的观点，再找出支持它、挑战它的证据。</div><div className="space-y-2">{steps.map(([label, status], index) => <details key={label} open={status === "running"} className="group rounded-xl border border-border bg-white/70"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm"><span className="flex items-center gap-2"><span className="grid size-5 place-items-center rounded-md bg-forest-soft text-xs font-medium text-primary">{index + 1}</span>{label}</span><span className={`shrink-0 rounded-full px-2 py-1 text-xs ${status === "completed" ? "bg-forest-soft text-primary" : status === "running" ? "bg-mist text-secondary" : "bg-neutral-100 text-ink-faint"}`}>{status === "completed" ? "已完成" : status === "running" ? "进行中" : "等待中"}</span></summary>{status !== "queued" ? <p className="border-t border-border px-3 py-2 text-xs leading-5 text-ink-faint">{status === "completed" ? "已写入右侧观点地图，可选择节点继续追问。" : "正在比较原文表述与已有推断。"}</p> : null}</details>)}</div></div>;
+function CurrentAction({ modules }: { modules: AnalysisSnapshot["modules"] }) {
+  const active = moduleTypes.find((moduleType) => modules[moduleType].status === "running");
+  const label = active ? { overview: "正在整理观点", argument: "正在核对论据", perspectives: "正在比较立场", sources: "正在核查信源", risks: "正在识别风险", reflection: "正在生成追问" }[active] : "分析已完成";
+  return <p className="mt-5 text-sm text-ink-faint"><span className="mr-2 inline-block size-2 rounded-full bg-secondary" />{label}</p>;
 }
 
 export function AnalysisWorkspace({
@@ -99,7 +95,7 @@ export function AnalysisWorkspace({
           <p className="hidden text-sm text-ink-faint sm:block">{connectionText}</p>
         </header>
         <AgentWorkspaceLayout
-          conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><div className="mt-4 ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><AgentActivity modules={snapshot.modules} /><div className="mt-5 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div><div className="mt-4"><RevisionHistory revisions={snapshot.revisions} modules={snapshot.modules} /></div></div>}
+          conversation={<div className="flex h-full flex-col rounded-[1.5rem] border border-border bg-white/75 p-5 shadow-sm sm:p-6"><div className="flex items-center gap-2 text-sm font-medium text-primary"><Sparkles size={16} aria-hidden="true" />{progressText}</div><div className="mt-5 ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><CurrentAction modules={snapshot.modules} /><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
           findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
           <ReportModule
             id="report-module-overview"

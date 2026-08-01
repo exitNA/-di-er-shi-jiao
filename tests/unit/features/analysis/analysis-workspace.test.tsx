@@ -36,7 +36,7 @@ it("presents an agent workspace with current findings", () => {
   render(<AnalysisWorkspace initialSnapshot={current} />);
 
   expect(screen.getByText("与第二视角一起推理")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "观点地图" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "当前发现" })).toBeInTheDocument();
   expect(screen.queryByText("认知体检报告")).not.toBeInTheDocument();
   expect(screen.getByText("速览等待分析")).toBeInTheDocument();
   expect(screen.getByText("论证骨架分析中")).toBeInTheDocument();
@@ -176,8 +176,6 @@ it("challenges a risk by stable target and keeps focus when the snapshot updates
   );
 
   expect(submit).toHaveFocus();
-  expect(screen.getByText("修订理由：原解释超出了原文证据。")).toBeInTheDocument();
-  expect(screen.getByText("新增证据：source-new")).toBeInTheDocument();
 });
 
 it("selects shared statements and source relations by stable target", async () => {
@@ -298,7 +296,6 @@ it("renders legacy snapshots without conversation arrays", () => {
   );
 
   expect(screen.getByRole("heading", { name: "对话" })).toBeInTheDocument();
-  expect(screen.getByText("还没有修订记录。")).toBeInTheDocument();
 });
 
 function snapshot(
