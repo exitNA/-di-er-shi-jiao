@@ -74,7 +74,7 @@ export function AuthDialog() {
           setOpen(true);
           recordEvent("login_clicked");
         }}
-        className="cursor-pointer rounded-full"
+        className="cursor-pointer rounded-full text-white hover:text-white"
       >
         登录
       </Button>
