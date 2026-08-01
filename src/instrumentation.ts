@@ -1,9 +1,13 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { configure, getConsoleSink } = await import("@logtape/logtape");
+  const { configure, getAnsiColorFormatter, getConsoleSink } = await import(
+    "@logtape/logtape",
+  );
   await configure({
     reset: true,
-    sinks: { console: getConsoleSink() },
+    sinks: {
+      console: getConsoleSink({ formatter: getAnsiColorFormatter({ timestamp: "time" }) }),
+    },
     loggers: [
       { category: "second-perspective", lowestLevel: "info", sinks: ["console"] },
       { category: ["logtape", "meta"], lowestLevel: "warning", sinks: ["console"] },
