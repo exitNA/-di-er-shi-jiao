@@ -1,7 +1,9 @@
-import { and, desc, eq, exists, gt, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gt, inArray, lt, sql } from "drizzle-orm";
 import type {
   AnalysisJobStatus,
   AnalysisSnapshot,
+  ConversationMessage,
+  ReportRevision,
   ReportModuleStatus,
   ReportModuleType,
 } from "@/features/analysis/domain/contracts";
@@ -12,19 +14,24 @@ import {
   analysisEvents,
   analysisJobs,
   analysisMaterials,
+  conversationMessages,
   expertRuns,
   reportModules,
+  reportRevisions,
   reports,
   reportSources,
 } from "@/server/db/schema/analysis";
 import type {
   AnalysisEvent,
   AnalysisRepository,
+  CompleteRevision,
   ExecutionJob,
   FinishExpertRun,
   HistoryItem,
+  NewChallenge,
   NewAnalysis,
   NewAnalysisEvent,
+  RecoverRevision,
   SaveModule,
   StartExpertRun,
 } from "./analysis-repository";
@@ -101,6 +108,212 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
     }
   }
 
+  async createChallenge(input: NewChallenge): Promise<{ messageId: string; created: boolean } | null> {
+    const [ownedReport] = await this.db
+      .select({ reportId: reports.id })
+      .from(reports)
+      .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+      .where(
+        and(
+          eq(reports.id, input.reportId),
+          eq(reports.userId, input.userId),
+          eq(reports.jobId, input.jobId),
+          eq(analysisJobs.userId, input.userId),
+        ),
+      )
+      .limit(1);
+    if (!ownedReport) return null;
+
+    try {
+      const [message] = await this.db
+        .insert(conversationMessages)
+        .values({
+          reportId: input.reportId,
+          userId: input.userId,
+          role: "user",
+          target: input.target,
+          content: input.content,
+          status: "queued",
+          idempotencyKey: input.idempotencyKey,
+          createdAt: input.now,
+          updatedAt: input.now,
+        })
+        .returning({ id: conversationMessages.id });
+      return { messageId: message.id, created: true };
+    } catch (error) {
+      if (!isPostgresUniqueViolation(error)) throw error;
+
+      const [message] = await this.db
+        .select({ id: conversationMessages.id })
+        .from(conversationMessages)
+        .where(
+          and(
+            eq(conversationMessages.reportId, input.reportId),
+            eq(conversationMessages.userId, input.userId),
+            eq(conversationMessages.idempotencyKey, input.idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (!message) throw error;
+      return { messageId: message.id, created: false };
+    }
+  }
+
+  async completeRevision(input: CompleteRevision): Promise<{ completed: boolean; revisionId?: string }> {
+    return this.db.transaction(async (tx) => {
+      const [message] = await tx
+        .select({ target: conversationMessages.target })
+        .from(conversationMessages)
+        .innerJoin(reports, eq(reports.id, conversationMessages.reportId))
+        .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+        .where(
+          and(
+            eq(conversationMessages.id, input.messageId),
+            eq(conversationMessages.reportId, input.reportId),
+            eq(conversationMessages.userId, input.userId),
+            eq(reports.id, input.reportId),
+            eq(reports.jobId, input.jobId),
+            eq(reports.userId, input.userId),
+            eq(analysisJobs.userId, input.userId),
+          ),
+        )
+        .limit(1);
+      if (!message) return { completed: false };
+
+      const [report] = await tx
+        .update(reports)
+        .set({ currentVersion: input.expectedReportVersion + 1, updatedAt: input.now })
+        .where(
+          and(
+            eq(reports.id, input.reportId),
+            eq(reports.userId, input.userId),
+            eq(reports.currentVersion, input.expectedReportVersion),
+          ),
+        )
+        .returning({ id: reports.id });
+      if (!report) {
+        await this.markRevisionRecoverable(tx, input);
+        return { completed: false };
+      }
+
+      const [module] = await tx
+        .update(reportModules)
+        .set({
+          status: "completed",
+          errorCode: null,
+          payload: input.module.payload,
+          version: input.module.nextVersion,
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(reportModules.reportId, input.reportId),
+            eq(reportModules.moduleType, input.module.moduleType),
+            eq(reportModules.version, input.module.expectedVersion),
+          ),
+        )
+        .returning({ id: reportModules.id });
+      if (!module) throw new Error("Report module version changed during revision");
+
+      const [agentMessage] = await tx
+        .insert(conversationMessages)
+        .values({
+          reportId: input.reportId,
+          userId: input.userId,
+          role: "agent",
+          target: message.target,
+          content: input.agentContent,
+          status: "completed",
+          createdAt: input.now,
+          updatedAt: input.now,
+        })
+        .returning({ id: conversationMessages.id });
+      await tx
+        .update(conversationMessages)
+        .set({ status: "completed", updatedAt: input.now })
+        .where(eq(conversationMessages.id, input.messageId));
+
+      const [revision] = await tx
+        .insert(reportRevisions)
+        .values({
+          reportId: input.reportId,
+          triggeringMessageId: input.messageId,
+          fromVersion: input.expectedReportVersion,
+          toVersion: input.expectedReportVersion + 1,
+          changes: input.changes,
+          status: "completed",
+          createdAt: input.now,
+          updatedAt: input.now,
+        })
+        .returning({ id: reportRevisions.id });
+      await tx.insert(analysisEvents).values({
+        jobId: input.jobId,
+        userId: input.userId,
+        eventType: "report.revised",
+        payload: {
+          messageId: input.messageId,
+          agentMessageId: agentMessage.id,
+          revisionId: revision.id,
+          moduleType: input.module.moduleType,
+          fromVersion: input.expectedReportVersion,
+          toVersion: input.expectedReportVersion + 1,
+        },
+        createdAt: input.now,
+      });
+      return { completed: true, revisionId: revision.id };
+    });
+  }
+
+  async recoverRevision(input: RecoverRevision): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const updated = await this.markRevisionRecoverable(tx, input);
+      return Boolean(updated);
+    });
+  }
+
+  private async markRevisionRecoverable(
+    tx: Parameters<AppDb["transaction"]>[0] extends (tx: infer Transaction) => unknown
+      ? Transaction
+      : never,
+    input: RecoverRevision,
+  ): Promise<boolean> {
+    const [message] = await tx
+      .update(conversationMessages)
+      .set({ status: "recoverable", updatedAt: input.now })
+      .where(
+        and(
+          eq(conversationMessages.id, input.messageId),
+          eq(conversationMessages.reportId, input.reportId),
+          eq(conversationMessages.userId, input.userId),
+          exists(
+            tx
+              .select({ reportId: reports.id })
+              .from(reports)
+              .innerJoin(analysisJobs, eq(analysisJobs.id, reports.jobId))
+              .where(
+                and(
+                  eq(reports.id, input.reportId),
+                  eq(reports.jobId, input.jobId),
+                  eq(reports.userId, input.userId),
+                  eq(analysisJobs.userId, input.userId),
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({ id: conversationMessages.id });
+    if (!message) return false;
+
+    await tx.insert(analysisEvents).values({
+      jobId: input.jobId,
+      userId: input.userId,
+      eventType: "conversation.updated",
+      payload: { messageId: input.messageId, status: "recoverable" },
+      createdAt: input.now,
+    });
+    return true;
+  }
+
   async getJobForExecution(jobId: string): Promise<ExecutionJob | null> {
     const [job] = await this.db
       .select({
@@ -138,6 +351,7 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
           createdAt: analysisJobs.createdAt,
           updatedAt: analysisJobs.updatedAt,
           reportId: reports.id,
+          currentVersion: reports.currentVersion,
         })
         .from(analysisJobs)
         .innerJoin(analysisMaterials, eq(analysisMaterials.id, analysisJobs.materialId))
@@ -146,8 +360,23 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
         .limit(1);
       if (!job) return null;
 
-      const [modules, [lastEvent]] = await Promise.all([
+      const [modules, messages, revisions, [lastEvent]] = await Promise.all([
         tx.select().from(reportModules).where(eq(reportModules.reportId, job.reportId)),
+        tx
+          .select()
+          .from(conversationMessages)
+          .where(
+            and(
+              eq(conversationMessages.reportId, job.reportId),
+              eq(conversationMessages.userId, userId),
+            ),
+          )
+          .orderBy(asc(conversationMessages.createdAt), asc(conversationMessages.id)),
+        tx
+          .select()
+          .from(reportRevisions)
+          .where(eq(reportRevisions.reportId, job.reportId))
+          .orderBy(asc(reportRevisions.createdAt), asc(reportRevisions.id)),
         tx
           .select({ id: analysisEvents.id })
           .from(analysisEvents)
@@ -170,12 +399,32 @@ export class PostgresAnalysisRepository implements AnalysisRepository {
 
       return {
         jobId: job.jobId,
+        reportId: job.reportId,
+        currentVersion: job.currentVersion,
         status: asJobStatus(job.status),
         configVersion: job.configVersion,
         materialPreview: job.materialPreview.slice(0, 80),
         createdAt: job.createdAt.toISOString(),
         updatedAt: job.updatedAt.toISOString(),
         lastEventId: lastEvent?.id ?? 0,
+        messages: messages.map((message) => ({
+          id: message.id,
+          reportId: message.reportId,
+          role: message.role as ConversationMessage["role"],
+          target: message.target,
+          content: message.content,
+          status: message.status as ConversationMessage["status"],
+          createdAt: message.createdAt.toISOString(),
+        })),
+        revisions: revisions.map((revision) => ({
+          id: revision.id,
+          triggeringMessageId: revision.triggeringMessageId,
+          fromVersion: revision.fromVersion,
+          toVersion: revision.toVersion,
+          changes: revision.changes,
+          status: revision.status as ReportRevision["status"],
+          createdAt: revision.createdAt.toISOString(),
+        })),
         modules: moduleMap,
       };
     }, { isolationLevel: "repeatable read", accessMode: "read only" });

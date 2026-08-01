@@ -3,6 +3,7 @@ import {
   argumentModuleSchema,
   baselineDraftSchema,
   externalSourceSchema,
+  reportItemTargetSchema,
   risksModuleSchema,
   sourcesModuleSchema,
   traceableStatementSchema,
@@ -129,5 +130,29 @@ describe("analysis report contracts", () => {
         ],
       }),
     ).toThrow(/sourceMaterialQuote/);
+  });
+
+  it("requires a stable ID for every risk item", () => {
+    expect(() =>
+      risksModuleSchema.parse({
+        items: [
+          {
+            type: "overgeneralization",
+            sourceMaterialQuote: "30 岁以后考公是获得稳定人生的唯一选择。",
+            explanation: "以单一个例代替普遍规律",
+            confidence: { score: 0.8, rationale: "范围超过证据" },
+          },
+        ],
+      }),
+    ).toThrow(/id/);
+  });
+
+  it("rejects a report item target without its stable item ID", () => {
+    expect(() =>
+      reportItemTargetSchema.parse({
+        moduleType: "risks",
+        section: "items",
+      }),
+    ).toThrow(/itemId/);
   });
 });

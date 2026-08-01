@@ -61,6 +61,115 @@ describe("PostgresAnalysisRepository", () => {
     await expect(repository.getOwnedSnapshot(await createUser(), input.jobId)).resolves.toBeNull();
   });
 
+  it("does not expose a saved challenge message to another user", async () => {
+    const owner = await createUser();
+    const { input } = await createAnalysis(owner);
+    await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId: owner,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-1",
+      now,
+    });
+
+    const ownerSnapshot = await repository.getOwnedSnapshot(owner, input.jobId);
+    await expect(repository.getOwnedSnapshot(await createUser(), input.jobId)).resolves.toBeNull();
+    expect(ownerSnapshot?.messages).toHaveLength(1);
+  });
+
+  it("returns the original challenge message for the same idempotency key", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = {
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks" as const, section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-1",
+      now,
+    };
+
+    const first = await repository.createChallenge(challenge);
+    const second = await repository.createChallenge(challenge);
+
+    expect(first).toEqual({ messageId: first.messageId, created: true });
+    expect(second).toEqual({ messageId: first.messageId, created: false });
+  });
+
+  it("does not overwrite a newer report revision with an outdated version", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "这个风险是否误读了原文？",
+      idempotencyKey: "challenge-1",
+      now,
+    });
+
+    const first = await repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      agentContent: "复核后已修订。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { items: [] },
+        expectedVersion: 0,
+        nextVersion: 1,
+      },
+      changes: [
+        {
+          target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+          reason: "原结论超出原文证据。",
+          newEvidenceSourceIds: [],
+          summary: "删除该风险。",
+        },
+      ],
+      now,
+    });
+    const stale = await repository.completeRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      agentContent: "这次过期修订不应覆盖报告。",
+      expectedReportVersion: 0,
+      module: {
+        moduleType: "risks",
+        payload: { items: [] },
+        expectedVersion: 1,
+        nextVersion: 2,
+      },
+      changes: [
+        {
+          target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+          reason: "过期复核。",
+          newEvidenceSourceIds: [],
+          summary: "不应写入。",
+        },
+      ],
+      now,
+    });
+
+    const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    expect(first.completed).toBe(true);
+    expect(stale.completed).toBe(false);
+    expect(snapshot).toMatchObject({ currentVersion: 1 });
+    expect(snapshot?.revisions).toHaveLength(1);
+    expect(snapshot?.messages).toHaveLength(2);
+    expect(snapshot?.messages.find((message) => message.role === "user")).toMatchObject({
+      status: "recoverable",
+    });
+  });
+
   it("writes module snapshot and event atomically", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);

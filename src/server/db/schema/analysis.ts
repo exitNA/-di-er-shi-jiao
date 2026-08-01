@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { users } from "./auth";
+import type { ReportItemTarget, ReportRevisionChange } from "@/features/analysis/domain/contracts";
 
 const newId = () => randomUUID();
 const now = (name: string) => timestamp(name, { withTimezone: true });
@@ -101,6 +102,53 @@ export const reports = pgTable("reports", {
   createdAt: now("created_at").notNull().defaultNow(),
   updatedAt: now("updated_at").notNull().defaultNow(),
 });
+
+export const conversationMessages = pgTable(
+  "conversation_messages",
+  {
+    id: uuid("id").primaryKey().$defaultFn(newId),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => reports.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    role: text("role").notNull(),
+    target: jsonb("target").$type<ReportItemTarget>().notNull(),
+    content: text("content").notNull(),
+    status: text("status").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    createdAt: now("created_at").notNull().defaultNow(),
+    updatedAt: now("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    unique("conversation_messages_report_id_idempotency_key_unique").on(
+      table.reportId,
+      table.idempotencyKey,
+    ),
+    index("conversation_messages_report_id_created_at_idx").on(table.reportId, table.createdAt),
+  ],
+);
+
+export const reportRevisions = pgTable(
+  "report_revisions",
+  {
+    id: uuid("id").primaryKey().$defaultFn(newId),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => reports.id),
+    triggeringMessageId: uuid("triggering_message_id")
+      .notNull()
+      .references(() => conversationMessages.id),
+    fromVersion: integer("from_version").notNull(),
+    toVersion: integer("to_version").notNull(),
+    changes: jsonb("changes").$type<ReportRevisionChange[]>().notNull(),
+    status: text("status").notNull(),
+    createdAt: now("created_at").notNull().defaultNow(),
+    updatedAt: now("updated_at").notNull().defaultNow(),
+  },
+  (table) => [index("report_revisions_report_id_created_at_idx").on(table.reportId, table.createdAt)],
+);
 
 export const reportModules = pgTable(
   "report_modules",

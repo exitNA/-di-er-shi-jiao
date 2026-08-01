@@ -2,7 +2,10 @@ import type {
   AnalysisSnapshot,
   AnalysisJobStatus,
   BaselineDraft,
+  ConversationMessage,
   ExternalSource,
+  ReportItemTarget,
+  ReportRevisionChange,
   ReportModuleStatus,
   ReportModuleType,
 } from "@/features/analysis/domain/contracts";
@@ -56,6 +59,41 @@ export type SaveModule = {
   now: Date;
 };
 
+export type NewChallenge = {
+  jobId: string;
+  reportId: string;
+  userId: string;
+  target: ReportItemTarget;
+  content: string;
+  idempotencyKey: string;
+  now: Date;
+};
+
+export type CompleteRevision = {
+  jobId: string;
+  reportId: string;
+  userId: string;
+  messageId: string;
+  agentContent: string;
+  expectedReportVersion: number;
+  module: {
+    moduleType: ReportModuleType;
+    payload: BaselineDraft[ReportModuleType];
+    expectedVersion: number;
+    nextVersion: number;
+  };
+  changes: ReportRevisionChange[];
+  now: Date;
+};
+
+export type RecoverRevision = {
+  jobId: string;
+  reportId: string;
+  userId: string;
+  messageId: string;
+  now: Date;
+};
+
 export type StartExpertRun = {
   id: string;
   jobId: string;
@@ -85,7 +123,9 @@ export type NewAnalysisEvent = {
     | "module.updated"
     | "job.recoverable"
     | "baseline.completed"
-    | "report.degraded";
+    | "report.degraded"
+    | "conversation.updated"
+    | "report.revised";
   payload: Record<string, string | number | boolean | null>;
   now: Date;
 };
@@ -97,6 +137,9 @@ export type AnalysisEvent = Omit<NewAnalysisEvent, "now"> & {
 
 export interface AnalysisRepository {
   createAnalysis(input: NewAnalysis): Promise<{ jobId: string; created: boolean }>;
+  createChallenge(input: NewChallenge): Promise<{ messageId: string; created: boolean } | null>;
+  completeRevision(input: CompleteRevision): Promise<{ completed: boolean; revisionId?: string }>;
+  recoverRevision(input: RecoverRevision): Promise<boolean>;
   getJobForExecution(jobId: string): Promise<ExecutionJob | null>;
   getOwnedSnapshot(userId: string, jobId: string): Promise<AnalysisSnapshot | null>;
   listOwnedHistory(userId: string, limit: number, before?: Date): Promise<HistoryItem[]>;

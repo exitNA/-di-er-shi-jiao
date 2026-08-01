@@ -93,6 +93,7 @@ export const sourcesModuleSchema = z.object({
 });
 
 export const riskItemSchema = z.object({
+  id: z.string().min(1),
   type: z.enum([
     "overgeneralization",
     "reversed_causality",
@@ -125,6 +126,54 @@ export const moduleTypes = [
 
 export type ReportModuleType = (typeof moduleTypes)[number];
 
+export const reportItemTargetSchema = z
+  .object({
+    moduleType: z.enum(moduleTypes),
+    section: z.string().min(1),
+    itemId: z.string().min(1),
+  })
+  .strict();
+
+export const conversationMessageRoleSchema = z.enum(["user", "agent"]);
+export const conversationMessageStatusSchema = z.enum([
+  "queued",
+  "completed",
+  "recoverable",
+]);
+
+export const conversationMessageSchema = z
+  .object({
+    id: z.string().uuid(),
+    reportId: z.string().uuid(),
+    role: conversationMessageRoleSchema,
+    target: reportItemTargetSchema,
+    content: z.string().min(1),
+    status: conversationMessageStatusSchema,
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const reportRevisionChangeSchema = z
+  .object({
+    target: reportItemTargetSchema,
+    reason: z.string().min(1),
+    newEvidenceSourceIds: z.array(z.string().min(1)),
+    summary: z.string().min(1),
+  })
+  .strict();
+
+export const reportRevisionSchema = z
+  .object({
+    id: z.string().uuid(),
+    triggeringMessageId: z.string().uuid(),
+    fromVersion: z.number().int().min(0),
+    toVersion: z.number().int().min(1),
+    changes: z.array(reportRevisionChangeSchema).min(1),
+    status: z.literal("completed"),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
 export const baselineDraftSchema = z.object({
   overview: overviewModuleSchema,
   argument: argumentModuleSchema,
@@ -143,15 +192,23 @@ export type SourcesModule = z.infer<typeof sourcesModuleSchema>;
 export type RisksModule = z.infer<typeof risksModuleSchema>;
 export type ReflectionModule = z.infer<typeof reflectionModuleSchema>;
 export type BaselineDraft = z.infer<typeof baselineDraftSchema>;
+export type ReportItemTarget = z.infer<typeof reportItemTargetSchema>;
+export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
+export type ReportRevisionChange = z.infer<typeof reportRevisionChangeSchema>;
+export type ReportRevision = z.infer<typeof reportRevisionSchema>;
 
 export type AnalysisSnapshot = {
   jobId: string;
+  reportId: string;
+  currentVersion: number;
   status: AnalysisJobStatus;
   configVersion: string;
   materialPreview: string;
   createdAt: string;
   updatedAt: string;
   lastEventId: number;
+  messages: ConversationMessage[];
+  revisions: ReportRevision[];
   modules: Record<
     ReportModuleType,
     {
