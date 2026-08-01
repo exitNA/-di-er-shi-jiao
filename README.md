@@ -15,7 +15,7 @@ pnpm dev
 ```
 
 把 `openssl` 输出写入 `.env.local` 的 `AUTH_SECRET`，然后访问
-<http://127.0.0.1:3000/register>。默认 `AGENT_ADAPTER=fake`、
+<http://localhost:5000/register>。默认 `AGENT_ADAPTER=fake`、
 `ANALYSIS_RUNTIME=in-process`，不需要外部服务密钥。
 
 完整的数据库、真实模型、Tavily、Trigger.dev、恢复、监控、评测、回滚和发布步骤见

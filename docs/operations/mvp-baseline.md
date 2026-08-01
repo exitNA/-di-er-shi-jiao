@@ -49,7 +49,7 @@ dropdb second_perspective_restore_check
 `.env.local` 至少包含：
 
 ```dotenv
-APP_URL=http://127.0.0.1:3000
+APP_URL=http://localhost:5000
 DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective
 TEST_DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective_test
 AUTH_SECRET=<openssl-rand-hex-32-output>
@@ -63,7 +63,7 @@ ANALYSIS_RUNTIME=in-process
 pnpm dev
 ```
 
-访问 <http://127.0.0.1:3000/register>。fake 模式是确定性的，不调用 LLM 或搜索服务；前缀
+访问 <http://localhost:5000/register>。fake 模式是确定性的，不调用 LLM 或搜索服务；前缀
 `[测试：任务中断]` 和 `[测试：信源失败一次]` 仅在非生产环境启用。
 
 ## 4. 真实 LLM 与 Tavily
