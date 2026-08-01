@@ -19,13 +19,27 @@ type AuthDialogEvent = "login_clicked" | "dialog_opened" | "dialog_closed" | "mo
 const logger = getLogger(["second-perspective", "auth"]);
 
 function recordEvent(event: AuthDialogEvent) {
-  logger.info("Auth dialog event", { event });
-  void fetch("/api/auth/diagnostics", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ event }),
-    keepalive: true,
-  }).catch(() => logger.warning("Auth dialog diagnostic delivery failed", { event }));
+  try {
+    logger.info("Auth dialog event", { event });
+  } catch {
+    // Console bridges must not interrupt authentication controls.
+  }
+  try {
+    void fetch("/api/auth/diagnostics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event }),
+      keepalive: true,
+    }).catch(() => {
+      try {
+        logger.warning("Auth dialog diagnostic delivery failed", { event });
+      } catch {
+        // Console bridges must not interrupt authentication controls.
+      }
+    });
+  } catch {
+    // Diagnostic delivery must not interrupt authentication controls.
+  }
 }
 
 export function AuthDialog() {
@@ -35,19 +49,19 @@ export function AuthDialog() {
   const registering = mode === "register";
 
   function handleSuccess() {
-    recordEvent("dialog_closed");
     setOpen(false);
+    recordEvent("dialog_closed");
     router.refresh();
   }
 
   function handleOpenChange(nextOpen: boolean) {
-    recordEvent(nextOpen ? "dialog_opened" : "dialog_closed");
     setOpen(nextOpen);
+    recordEvent(nextOpen ? "dialog_opened" : "dialog_closed");
   }
 
   function switchMode() {
-    recordEvent("mode_changed");
     setMode(registering ? "login" : "register");
+    recordEvent("mode_changed");
   }
 
   return (
@@ -55,8 +69,8 @@ export function AuthDialog() {
       <button
         type="button"
         onClick={() => {
-          recordEvent("login_clicked");
           setOpen(true);
+          recordEvent("login_clicked");
         }}
         className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white"
       >
