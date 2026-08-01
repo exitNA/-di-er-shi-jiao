@@ -69,7 +69,12 @@ export function SourcesModule({ data }: { data: SourcesModuleData }) {
           </p>
         )}
       </section>
-      <StatementSection id="source-gaps" title="证据缺口" items={data.gaps} />
+      <StatementSection
+        id="source-gaps"
+        section="gaps"
+        title="证据缺口"
+        items={data.gaps}
+      />
     </>
   );
 }

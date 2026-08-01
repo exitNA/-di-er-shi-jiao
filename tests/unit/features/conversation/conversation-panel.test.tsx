@@ -104,6 +104,49 @@ it("retries a failed submission with the same idempotency key", async () => {
   expect(second.idempotencyKey).toBe(first.idempotencyKey);
 });
 
+it("retries the durable challenge when snapshot refresh fails", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      ok: true,
+      messageId: "message-1",
+      created: false,
+      status: "completed",
+    }),
+  );
+  const refresh = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("刷新失败"))
+    .mockResolvedValueOnce(undefined);
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <ConversationPanel
+      jobId="job-1"
+      messages={[]}
+      selectedTarget={target}
+      onRefresh={refresh}
+    />,
+  );
+
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "质疑内容" }),
+    "请重新核对。",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "提交质疑" }));
+
+  expect(await screen.findByText("质疑提交失败，请重试。")).toBeInTheDocument();
+  expect(screen.queryByText("质疑已提交，等待报告更新。")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "重试质疑" }));
+  await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
+
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  const first = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+  const second = JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body));
+  expect(second.idempotencyKey).toBe(first.idempotencyKey);
+  expect(
+    await screen.findByText("质疑已提交，等待报告更新。"),
+  ).toBeInTheDocument();
+});
+
 it("renders persisted messages and a revision with a focusable report link", () => {
   const messages: ConversationMessage[] = [
     {

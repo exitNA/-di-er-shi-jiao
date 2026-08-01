@@ -60,9 +60,9 @@ export function ConversationPanel({
         body: JSON.stringify(submission),
       });
       if (!response.ok) throw new Error("Challenge request failed");
-      setRequestState("submitted");
       setDraft("");
-      await onRefresh().catch(() => undefined);
+      await onRefresh();
+      setRequestState("submitted");
     } catch {
       setRequestState("failed");
     }

@@ -6,21 +6,25 @@ export function OverviewModule({ data }: { data: OverviewModuleData }) {
     <>
       <StatementSection
         id="overview-core-claims"
+        section="coreClaims"
         title="核心主张"
         items={data.coreClaims}
       />
       <StatementSection
         id="overview-main-disputes"
+        section="mainDisputes"
         title="主要争议"
         items={data.mainDisputes}
       />
       <StatementSection
         id="overview-top-risks"
+        section="topRisks"
         title="最高优先级认知风险"
         items={data.topRisks}
       />
       <StatementSection
         id="overview-key-unknowns"
+        section="keyUnknowns"
         title="关键未知信息"
         items={data.keyUnknowns}
       />

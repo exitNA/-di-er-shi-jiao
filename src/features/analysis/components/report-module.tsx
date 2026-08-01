@@ -103,15 +103,16 @@ export function ReportModule({
 
 export function StatementSection({
   id,
+  section,
   title,
   items,
 }: {
   id: string;
+  section: string;
   title: string;
   items: readonly TraceableStatement[];
 }) {
   const challenge = useContext(ChallengeContext);
-  const section = reportSection(id, challenge?.moduleType);
   return (
     <section aria-labelledby={`${id}-heading`}>
       <h3 id={`${id}-heading`} className="text-lg font-medium">
@@ -184,12 +185,4 @@ export function ReportChallengeButton({
       {label}
     </Button>
   );
-}
-
-function reportSection(id: string, moduleType?: ReportModuleType): string {
-  const prefix = moduleType ? `${moduleType}-` : "";
-  const value = id.startsWith(prefix) ? id.slice(prefix.length) : id;
-  if (value === "factual-gaps") return "gaps";
-  if (value === "reasoning") return "reasoningSteps";
-  return value.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }

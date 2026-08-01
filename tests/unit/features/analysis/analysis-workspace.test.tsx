@@ -256,6 +256,43 @@ it("selects shared statements and source relations by stable target", async () =
   ).toBeInTheDocument();
 });
 
+it("targets a source gap with the gaps domain field", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true })));
+  render(
+    <AnalysisWorkspace
+      initialSnapshot={snapshot({
+        status: "completed",
+        modules: {
+          ...emptyModules(),
+          sources: {
+            status: "completed",
+            version: 1,
+            payload: {
+              claims: [],
+              sources: [],
+              relations: [],
+              gaps: [
+                {
+                  id: "gap-1",
+                  text: "缺少原始数据。",
+                  origin: "ai_inference",
+                  confidence: { score: 0.7, rationale: "尚无一手资料" },
+                },
+              ],
+            },
+          },
+        },
+      })}
+    />,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "质疑：证据缺口" }));
+
+  expect(
+    screen.getByText("当前条目：信源对照 / 证据缺口 / gap-1"),
+  ).toBeInTheDocument();
+});
+
 function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {

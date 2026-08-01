@@ -10,11 +10,13 @@ export function ArgumentModule({ data }: { data: ArgumentModuleData }) {
         </p>
         <StatementSection
           id="argument-factual-statements"
+          section="factualStatements"
           title="可识别的事实陈述"
           items={data.factualStatements}
         />
         <StatementSection
           id="argument-factual-gaps"
+          section="gaps"
           title="待核实信息"
           items={data.gaps}
         />
@@ -24,29 +26,39 @@ export function ArgumentModule({ data }: { data: ArgumentModuleData }) {
 
   return (
     <>
-      <StatementSection id="argument-claims" title="核心主张" items={data.claims} />
+      <StatementSection
+        id="argument-claims"
+        section="claims"
+        title="核心主张"
+        items={data.claims}
+      />
       <StatementSection
         id="argument-evidence"
+        section="evidence"
         title="支持论据"
         items={data.evidence}
       />
       <StatementSection
         id="argument-assumptions"
+        section="assumptions"
         title="隐藏假设"
         items={data.assumptions}
       />
       <StatementSection
         id="argument-reasoning"
+        section="reasoningSteps"
         title="中间推理"
         items={data.reasoningSteps}
       />
       <StatementSection
         id="argument-conclusions"
+        section="conclusions"
         title="最终结论"
         items={data.conclusions}
       />
       <StatementSection
         id="argument-gaps"
+        section="gaps"
         title="缺失或跳跃"
         items={data.gaps}
       />
