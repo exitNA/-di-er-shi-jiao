@@ -67,6 +67,7 @@ export function ReportModule({
     <ChallengeContext.Provider value={{ moduleType, onChallenge }}>
       <section
         id={id}
+        tabIndex={-1}
         className="scroll-mt-6 rounded-xl border border-neutral-300 bg-white p-6"
         aria-labelledby={`${id}-heading`}
       >

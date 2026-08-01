@@ -20,12 +20,12 @@ type RequestState = "idle" | "submitting" | "failed" | "submitted";
 
 export function ConversationPanel({
   jobId,
-  messages,
+  messages = [],
   selectedTarget,
   onRefresh,
 }: {
   jobId: string;
-  messages: readonly ConversationMessage[];
+  messages?: readonly ConversationMessage[];
   selectedTarget?: ReportItemTarget;
   onRefresh: () => Promise<unknown>;
 }) {
@@ -79,6 +79,15 @@ export function ConversationPanel({
     });
   }
 
+  function retryMessage(message: ConversationMessage) {
+    if (!message.idempotencyKey) return;
+    void submit({
+      target: message.target,
+      content: message.content,
+      idempotencyKey: message.idempotencyKey,
+    });
+  }
+
   return (
     <section
       id="conversation-panel"
@@ -103,9 +112,23 @@ export function ConversationPanel({
               </p>
               <p className="mt-1 leading-7">{message.content}</p>
               {message.role === "user" && message.status !== "completed" ? (
-                <p className="mt-1 text-sm text-neutral-600">
-                  {messageStatusLabel(message.status)}
-                </p>
+                <>
+                  <p className="mt-1 text-sm text-neutral-600">
+                    {messageStatusLabel(message.status)}
+                  </p>
+                  {message.idempotencyKey ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      disabled={requestState === "submitting"}
+                      onClick={() => retryMessage(message)}
+                    >
+                      重试这条质疑
+                    </Button>
+                  ) : null}
+                </>
               ) : null}
             </li>
           ))}

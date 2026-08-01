@@ -194,7 +194,10 @@ export function AnalysisWorkspace({
             selectedTarget={selectedTarget}
             onRefresh={refreshSnapshot}
           />
-          <RevisionHistory revisions={snapshot.revisions} />
+          <RevisionHistory
+            revisions={snapshot.revisions}
+            modules={snapshot.modules}
+          />
         </div>
 
         <p className="mt-8 rounded-lg bg-neutral-100 p-4 text-sm leading-6 text-neutral-700">

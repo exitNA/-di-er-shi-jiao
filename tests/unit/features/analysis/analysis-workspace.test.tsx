@@ -146,6 +146,7 @@ it("challenges a risk by stable target and keeps focus when the snapshot updates
             target: { moduleType: "risks", section: "items", itemId: "risk-1" },
             content: "这项风险误读了原文。",
             status: "completed",
+            idempotencyKey: "persisted-challenge-key",
             createdAt: "2026-08-01T01:00:00.000Z",
           },
           {
@@ -155,6 +156,7 @@ it("challenges a risk by stable target and keeps focus when the snapshot updates
             target: { moduleType: "risks", section: "items", itemId: "risk-1" },
             content: "复核后已修订报告。",
             status: "completed",
+            idempotencyKey: null,
             createdAt: "2026-08-01T01:01:00.000Z",
           },
         ],
@@ -291,6 +293,19 @@ it("targets a source gap with the gaps domain field", async () => {
   expect(
     screen.getByText("当前条目：信源对照 / 证据缺口 / gap-1"),
   ).toBeInTheDocument();
+});
+
+it("renders legacy snapshots without conversation arrays", () => {
+  const legacy = snapshot() as Partial<AnalysisSnapshot>;
+  delete legacy.messages;
+  delete legacy.revisions;
+
+  render(
+    <AnalysisWorkspace initialSnapshot={legacy as AnalysisSnapshot} />,
+  );
+
+  expect(screen.getByRole("heading", { name: "报告质疑" })).toBeInTheDocument();
+  expect(screen.getByText("报告尚无修订。")).toBeInTheDocument();
 });
 
 function snapshot(

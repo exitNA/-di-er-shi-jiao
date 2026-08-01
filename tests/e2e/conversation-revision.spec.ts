@@ -31,6 +31,10 @@ test("persists a challenged cognitive-risk revision after reload", async ({ page
   await expect(page.getByRole("link", { name: revisionTarget })).toBeVisible();
   await expect(page.getByText(revisionReason)).toBeVisible();
   await expect(page.getByText(revisionEvidence)).toBeVisible();
+
+  await page.getByRole("link", { name: revisionTarget }).click();
+  await expect(page).toHaveURL(/#report-module-risks$/);
+  await expect(page.locator("#report-module-risks")).toBeFocused();
 });
 
 async function register(page: Page, username: string): Promise<void> {

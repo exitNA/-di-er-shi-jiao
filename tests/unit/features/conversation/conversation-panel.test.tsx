@@ -147,6 +147,43 @@ it("retries the durable challenge when snapshot refresh fails", async () => {
   ).toBeInTheDocument();
 });
 
+it("retries a persisted recoverable challenge with its durable key", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      ok: true,
+      messageId: "11111111-1111-4111-8111-111111111111",
+      created: false,
+      status: "running",
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <ConversationPanel
+      jobId="job-1"
+      messages={[
+        message({
+          status: "recoverable",
+          idempotencyKey: "persisted-challenge-key",
+        }),
+      ]}
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+
+  await userEvent.click(
+    screen.getByRole("button", { name: "重试这条质疑" }),
+  );
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+  expect(
+    JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body)),
+  ).toEqual({
+    target,
+    content: "请重新核对。",
+    idempotencyKey: "persisted-challenge-key",
+  });
+});
+
 it("renders persisted messages and a revision with a focusable report link", () => {
   const messages: ConversationMessage[] = [
     {
@@ -156,6 +193,7 @@ it("renders persisted messages and a revision with a focusable report link", () 
       target,
       content: "这项风险误读了原文。",
       status: "completed",
+      idempotencyKey: "persisted-challenge-key",
       createdAt: "2026-08-01T01:00:00.000Z",
     },
     {
@@ -165,6 +203,7 @@ it("renders persisted messages and a revision with a focusable report link", () 
       target,
       content: "复核后已修订报告。",
       status: "completed",
+      idempotencyKey: null,
       createdAt: "2026-08-01T01:01:00.000Z",
     },
   ];
@@ -210,6 +249,31 @@ it("renders persisted messages and a revision with a focusable report link", () 
   ).toHaveAttribute("href", "#report-item-risks-items-risk-1");
   expect(screen.getByText("修订理由：原解释超出了原文证据。")).toBeInTheDocument();
   expect(screen.getByText("新增证据：source-new")).toBeInTheDocument();
+});
+
+it("focuses the stable module anchor when a revised item no longer exists", async () => {
+  const modules = analysisSnapshot().modules;
+  modules.risks = {
+    status: "completed",
+    version: 2,
+    payload: { items: [] },
+  };
+
+  render(
+    <>
+      <section id="report-module-risks" tabIndex={-1} />
+      <RevisionHistory revisions={[revision()]} modules={modules} />
+    </>,
+  );
+
+  const link = screen.getByRole("link", {
+    name: "认知风险 / 风险条目 / risk-1",
+  });
+  expect(link).toHaveAttribute("href", "#report-module-risks");
+
+  await userEvent.click(link);
+
+  expect(document.querySelector("#report-module-risks")).toHaveFocus();
 });
 
 it("keeps a completed report connected while conversation work is pending and merges records by ID", async () => {
@@ -303,6 +367,7 @@ function message(
     target,
     content: "请重新核对。",
     status: "completed",
+    idempotencyKey: "persisted-challenge-key",
     createdAt: "2026-08-01T01:00:00.000Z",
     ...overrides,
   };

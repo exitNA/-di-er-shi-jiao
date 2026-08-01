@@ -1,6 +1,8 @@
-import type {
-  ReportItemTarget,
-  ReportRevision,
+import {
+  resolveReportItemTarget,
+  type AnalysisSnapshot,
+  type ReportItemTarget,
+  type ReportRevision,
 } from "@/features/analysis/domain/contracts";
 
 const moduleLabels: Record<ReportItemTarget["moduleType"], string> = {
@@ -43,9 +45,11 @@ export function reportTargetLabel(target: ReportItemTarget): string {
 }
 
 export function RevisionHistory({
-  revisions,
+  revisions = [],
+  modules,
 }: {
-  revisions: readonly ReportRevision[];
+  revisions?: readonly ReportRevision[];
+  modules?: AnalysisSnapshot["modules"];
 }) {
   return (
     <section
@@ -58,27 +62,34 @@ export function RevisionHistory({
       {revisions.length ? (
         <ul className="mt-4 space-y-4">
           {revisions.flatMap((revision) =>
-            revision.changes.map((change, index) => (
-              <li
-                key={`${revision.id}-${index}`}
-                className="rounded-lg bg-neutral-50 p-4 text-sm leading-6"
-              >
-                <a
-                  className="font-medium underline"
-                  href={`#${encodeURIComponent(reportItemAnchorId(change.target))}`}
+            revision.changes.map((change, index) => {
+              const anchorId =
+                modules && !resolveReportItemTarget(modules, change.target)
+                  ? `report-module-${change.target.moduleType}`
+                  : reportItemAnchorId(change.target);
+              return (
+                <li
+                  key={`${revision.id}-${index}`}
+                  className="rounded-lg bg-neutral-50 p-4 text-sm leading-6"
                 >
-                  {reportTargetLabel(change.target)}
-                </a>
-                <p className="mt-2">{change.summary}</p>
-                <p>修订理由：{change.reason}</p>
-                <p>
-                  新增证据：
-                  {change.newEvidenceSourceIds.length
-                    ? change.newEvidenceSourceIds.join("、")
-                    : "无"}
-                </p>
-              </li>
-            )),
+                  <a
+                    className="font-medium underline"
+                    href={`#${encodeURIComponent(anchorId)}`}
+                    onClick={() => document.getElementById(anchorId)?.focus()}
+                  >
+                    {reportTargetLabel(change.target)}
+                  </a>
+                  <p className="mt-2">{change.summary}</p>
+                  <p>修订理由：{change.reason}</p>
+                  <p>
+                    新增证据：
+                    {change.newEvidenceSourceIds.length
+                      ? change.newEvidenceSourceIds.join("、")
+                      : "无"}
+                  </p>
+                </li>
+              );
+            }),
           )}
         </ul>
       ) : (
