@@ -47,7 +47,9 @@ a {
   font: inherit;
 }
 
-:focus-visible {
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
   outline: 3px solid rgb(39 139 136 / 50%);
   outline-offset: 3px;
 }
