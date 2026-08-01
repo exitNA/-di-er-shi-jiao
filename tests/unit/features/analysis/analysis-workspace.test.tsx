@@ -69,8 +69,8 @@ it("uses one polite status region, keeps focus and shows the fixed disclaimer", 
   const { container, rerender } = render(
     <AnalysisWorkspace initialSnapshot={current} />,
   );
-  const returnLink = screen.getByRole("link", { name: "返回输入页" });
-  returnLink.focus();
+  const overviewModule = screen.getByRole("region", { name: "速览" });
+  overviewModule.focus();
 
   rerender(
     <AnalysisWorkspace
@@ -79,7 +79,7 @@ it("uses one polite status region, keeps focus and shows the fixed disclaimer", 
   );
 
   expect(container.querySelectorAll('[aria-live="polite"]')).toHaveLength(1);
-  expect(returnLink).toHaveFocus();
+  expect(overviewModule).toHaveFocus();
   expect(screen.getByText("认知体检已完成")).toBeInTheDocument();
   expect(
     screen.getByText(

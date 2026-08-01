@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { AnalysisWorkspace } from "@/features/analysis/components/analysis-workspace";
 import { getCurrentUser } from "@/features/auth/server/current-user";
+import { AppNavigation } from "@/components/navigation/app-navigation";
 import { getContainer } from "@/server/container";
 
 export default async function AnalysisPage({
@@ -17,5 +18,5 @@ export default async function AnalysisPage({
     await getContainer().analysisRepository.getOwnedSnapshot(user.id, jobId);
   if (!snapshot) notFound();
 
-  return <AnalysisWorkspace initialSnapshot={snapshot} />;
+  return <><AppNavigation username={user.username} /><AnalysisWorkspace initialSnapshot={snapshot} /></>;
 }

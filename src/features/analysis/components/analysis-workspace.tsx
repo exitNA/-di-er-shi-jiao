@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Compass, Radio } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -84,20 +83,12 @@ export function AnalysisWorkspace({
   return (
     <main className="min-h-screen px-4 py-8 sm:px-6 sm:py-10">
       <div className="mx-auto w-full max-w-5xl">
-        <header className="flex flex-wrap items-start justify-between gap-4">
+        <header>
           <div className="flex items-start gap-3">
             <span className="mt-1 grid size-9 place-items-center rounded-2xl bg-mist text-primary"><Compass size={19} aria-hidden="true" /></span>
             <div><p className="font-mono text-xs font-medium tracking-[0.16em] text-secondary">第二视角 · 分析工作台</p>
               <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">认知体检报告</h1></div>
           </div>
-          <nav className="flex gap-2" aria-label="报告导航">
-            <Link className="rounded-full border border-border bg-white/60 px-3.5 py-2 text-sm font-medium transition hover:border-secondary" href="/">
-              返回输入页
-            </Link>
-            <Link className="rounded-full border border-border bg-white/60 px-3.5 py-2 text-sm font-medium transition hover:border-secondary" href="/history">
-              思考档案
-            </Link>
-          </nav>
         </header>
 
         <div className="mt-8 overflow-hidden rounded-[1.75rem] border border-border bg-white/75 shadow-[0_20px_45px_-35px_rgba(22,58,54,0.35)]">
