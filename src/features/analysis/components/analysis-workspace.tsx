@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ArgumentModule } from "./argument-module";
 import { OverviewModule } from "./overview-module";
@@ -19,8 +19,11 @@ import {
   type ReflectionModule as ReflectionModuleData,
   type RisksModule as RisksModuleData,
   type SourcesModule as SourcesModuleData,
+  type ReportItemTarget,
 } from "@/features/analysis/domain/contracts";
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
+import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
+import { RevisionHistory } from "@/features/conversation/components/revision-history";
 
 const disclaimer =
   "本报告由 AI 生成，旨在提供多角度思考框架。请核对引用，并结合自身知识独立判断。";
@@ -30,10 +33,9 @@ export function AnalysisWorkspace({
 }: {
   initialSnapshot: AnalysisSnapshot;
 }) {
-  const { snapshot, connectionState, retryModule } = useAnalysisStream(
-    initialSnapshot.jobId,
-    initialSnapshot,
-  );
+  const { snapshot, connectionState, retryModule, refreshSnapshot } =
+    useAnalysisStream(initialSnapshot.jobId, initialSnapshot);
+  const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
   const completed = Object.values(snapshot.modules).filter(
     (module) => module.status === "completed",
   ).length;
@@ -101,9 +103,7 @@ export function AnalysisWorkspace({
         </header>
 
         <div className="mt-8 rounded-lg border border-neutral-300 bg-white p-5">
-          <p aria-live="polite" aria-atomic="true" className="font-medium">
-            {progressText}
-          </p>
+          <p className="font-medium">{progressText}</p>
           <p className="mt-1 text-sm text-neutral-600">{connectionText}</p>
           <p className="mt-4 leading-7 text-neutral-700">
             {snapshot.materialPreview}
@@ -116,6 +116,7 @@ export function AnalysisWorkspace({
             moduleType="overview"
             title="速览"
             status={overview.status}
+            onChallenge={setSelectedTarget}
           >
             {overview.payload ? (
               <OverviewModule data={overview.payload as OverviewModuleData} />
@@ -127,6 +128,7 @@ export function AnalysisWorkspace({
             title="论证骨架"
             status={argument.status}
             onRetry={() => retryModule("argument")}
+            onChallenge={setSelectedTarget}
           >
             {argument.payload ? (
               <ArgumentModule data={argument.payload as ArgumentModuleData} />
@@ -138,6 +140,7 @@ export function AnalysisWorkspace({
             title="多视角地图"
             status={perspectives.status}
             onRetry={() => retryModule("perspectives")}
+            onChallenge={setSelectedTarget}
           >
             {perspectives.payload ? (
               <PerspectivesModule
@@ -151,6 +154,7 @@ export function AnalysisWorkspace({
             title="信源对照"
             status={sources.status}
             onRetry={() => retryModule("sources")}
+            onChallenge={setSelectedTarget}
           >
             {sources.payload ? (
               <SourcesModule data={sources.payload as SourcesModuleData} />
@@ -162,6 +166,7 @@ export function AnalysisWorkspace({
             title="认知风险"
             status={risks.status}
             onRetry={() => retryModule("risks")}
+            onChallenge={setSelectedTarget}
           >
             {risks.payload ? (
               <RisksModule data={risks.payload as RisksModuleData} />
@@ -172,6 +177,7 @@ export function AnalysisWorkspace({
             moduleType="reflection"
             title="思考对话"
             status={reflection.status}
+            onChallenge={setSelectedTarget}
           >
             {reflection.payload ? (
               <ReflectionModule
@@ -179,6 +185,16 @@ export function AnalysisWorkspace({
               />
             ) : undefined}
           </ReportModule>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <ConversationPanel
+            jobId={snapshot.jobId}
+            messages={snapshot.messages}
+            selectedTarget={selectedTarget}
+            onRefresh={refreshSnapshot}
+          />
+          <RevisionHistory revisions={snapshot.revisions} />
         </div>
 
         <p className="mt-8 rounded-lg bg-neutral-100 p-4 text-sm leading-6 text-neutral-700">

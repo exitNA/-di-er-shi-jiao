@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
 import { ConfidenceMeter } from "./confidence-meter";
 import { TraceabilityBadge } from "./traceability-badge";
 import type {
+  ReportItemTarget,
   ReportModuleStatus,
   ReportModuleType,
   TraceableStatement,
 } from "@/features/analysis/domain/contracts";
+import { reportItemAnchorId } from "@/features/conversation/components/revision-history";
 
 type ReportModuleProps = {
   id: string;
@@ -17,7 +20,13 @@ type ReportModuleProps = {
   status: ReportModuleStatus;
   children?: ReactNode;
   onRetry?: () => Promise<void>;
+  onChallenge?: (target: ReportItemTarget) => void;
 };
+
+const ChallengeContext = createContext<{
+  moduleType: ReportModuleType;
+  onChallenge?: (target: ReportItemTarget) => void;
+} | null>(null);
 
 export function ReportModule({
   id,
@@ -26,6 +35,7 @@ export function ReportModule({
   status,
   children,
   onRetry,
+  onChallenge,
 }: ReportModuleProps) {
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string>();
@@ -54,38 +64,40 @@ export function ReportModule({
   }
 
   return (
-    <section
-      id={id}
-      className="scroll-mt-6 rounded-xl border border-neutral-300 bg-white p-6"
-      aria-labelledby={`${id}-heading`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <h2 id={`${id}-heading`} className="text-2xl font-semibold">
-          {title}
-        </h2>
-        <p className="text-sm text-neutral-600">{statusText}</p>
-      </div>
-      {children ? <div className="mt-6 space-y-6">{children}</div> : null}
-      {status === "failed" && onRetry ? (
-        <button
-          type="button"
-          className="mt-5 rounded-lg border border-neutral-900 px-4 py-2 font-medium disabled:opacity-50"
-          disabled={retrying}
-          onClick={() => void retry()}
-        >
-          {retrying
-            ? "正在重试…"
-            : sourceFailed
-              ? "重试信源对照"
-              : `重试${title}`}
-        </button>
-      ) : null}
-      {retryError ? (
-        <p role="alert" className="mt-3 text-sm text-red-700">
-          {retryError}
-        </p>
-      ) : null}
-    </section>
+    <ChallengeContext.Provider value={{ moduleType, onChallenge }}>
+      <section
+        id={id}
+        className="scroll-mt-6 rounded-xl border border-neutral-300 bg-white p-6"
+        aria-labelledby={`${id}-heading`}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h2 id={`${id}-heading`} className="text-2xl font-semibold">
+            {title}
+          </h2>
+          <p className="text-sm text-neutral-600">{statusText}</p>
+        </div>
+        {children ? <div className="mt-6 space-y-6">{children}</div> : null}
+        {status === "failed" && onRetry ? (
+          <button
+            type="button"
+            className="mt-5 rounded-lg border border-neutral-900 px-4 py-2 font-medium disabled:opacity-50"
+            disabled={retrying}
+            onClick={() => void retry()}
+          >
+            {retrying
+              ? "正在重试…"
+              : sourceFailed
+                ? "重试信源对照"
+                : `重试${title}`}
+          </button>
+        ) : null}
+        {retryError ? (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            {retryError}
+          </p>
+        ) : null}
+      </section>
+    </ChallengeContext.Provider>
   );
 }
 
@@ -98,6 +110,8 @@ export function StatementSection({
   title: string;
   items: readonly TraceableStatement[];
 }) {
+  const challenge = useContext(ChallengeContext);
+  const section = reportSection(id, challenge?.moduleType);
   return (
     <section aria-labelledby={`${id}-heading`}>
       <h3 id={`${id}-heading`} className="text-lg font-medium">
@@ -108,7 +122,16 @@ export function StatementSection({
           {items.map((item) => (
             <li
               key={item.id}
-              id={`${id}-${item.id}`}
+              id={
+                challenge
+                  ? reportItemAnchorId({
+                      moduleType: challenge.moduleType,
+                      section,
+                      itemId: item.id,
+                    })
+                  : `${id}-${item.id}`
+              }
+              tabIndex={challenge ? -1 : undefined}
               className="rounded-lg bg-neutral-50 p-4"
             >
               <p className="leading-7">{item.text}</p>
@@ -121,6 +144,11 @@ export function StatementSection({
                 <TraceabilityBadge origin={item.origin} />
               </div>
               <ConfidenceMeter confidence={item.confidence} />
+              <ReportChallengeButton
+                section={section}
+                itemId={item.id}
+                label={`质疑：${title}`}
+              />
             </li>
           ))}
         </ul>
@@ -129,4 +157,39 @@ export function StatementSection({
       )}
     </section>
   );
+}
+
+export function ReportChallengeButton({
+  section,
+  itemId,
+  label,
+}: {
+  section: string;
+  itemId: string;
+  label: string;
+}) {
+  const challenge = useContext(ChallengeContext);
+  if (!challenge?.onChallenge) return null;
+  const target = { moduleType: challenge.moduleType, section, itemId };
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="mt-4"
+      aria-controls="conversation-panel"
+      onClick={() => challenge.onChallenge?.(target)}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function reportSection(id: string, moduleType?: ReportModuleType): string {
+  const prefix = moduleType ? `${moduleType}-` : "";
+  const value = id.startsWith(prefix) ? id.slice(prefix.length) : id;
+  if (value === "factual-gaps") return "gaps";
+  if (value === "reasoning") return "reasoningSteps";
+  return value.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }

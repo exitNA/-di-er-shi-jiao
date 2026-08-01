@@ -1,5 +1,7 @@
 import type { RisksModule as RisksModuleData } from "@/features/analysis/domain/contracts";
 import { ConfidenceMeter } from "./confidence-meter";
+import { ReportChallengeButton } from "./report-module";
+import { reportItemAnchorId } from "@/features/conversation/components/revision-history";
 
 const riskLabels: Record<RisksModuleData["items"][number]["type"], string> = {
   overgeneralization: "以偏概全",
@@ -16,10 +18,15 @@ export function RisksModule({ data }: { data: RisksModuleData }) {
 
   return (
     <ul className="space-y-4">
-      {data.items.map((item, index) => (
+      {data.items.map((item) => (
         <li
-          key={`${item.type}-${index}`}
-          id={`risk-${item.type}-${index}`}
+          key={item.id}
+          id={reportItemAnchorId({
+            moduleType: "risks",
+            section: "items",
+            itemId: item.id,
+          })}
+          tabIndex={-1}
           className="rounded-lg bg-neutral-50 p-4"
         >
           <h3 className="text-lg font-medium">{riskLabels[item.type]}</h3>
@@ -28,6 +35,11 @@ export function RisksModule({ data }: { data: RisksModuleData }) {
           </blockquote>
           <p className="mt-3 leading-7">{item.explanation}</p>
           <ConfidenceMeter confidence={item.confidence} />
+          <ReportChallengeButton
+            section="items"
+            itemId={item.id}
+            label="质疑：认知风险"
+          />
         </li>
       ))}
     </ul>

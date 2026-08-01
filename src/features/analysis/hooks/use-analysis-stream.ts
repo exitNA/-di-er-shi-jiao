@@ -169,10 +169,26 @@ export function useAnalysisStream(
     };
   }, [fetchSnapshot, jobId, networkActive]);
 
-  return { snapshot, connectionState, retryModule };
+  return {
+    snapshot,
+    connectionState,
+    retryModule,
+    refreshSnapshot: fetchSnapshot,
+  };
 }
 
 function shouldUseNetwork(snapshot: AnalysisSnapshot): boolean {
+  if (
+    snapshot.messages?.some(
+      (message) =>
+        message.role === "user" &&
+        (message.status === "queued" ||
+          message.status === "running" ||
+          message.status === "recoverable"),
+    )
+  ) {
+    return true;
+  }
   if (snapshot.status === "completed" || snapshot.status === "recoverable") {
     return false;
   }
@@ -204,5 +220,16 @@ function mergeSnapshots(
     ...next,
     lastEventId: Math.max(current.lastEventId, next.lastEventId),
     modules,
+    messages: mergeRecords(current.messages ?? [], next.messages ?? []),
+    revisions: mergeRecords(current.revisions ?? [], next.revisions ?? []),
   };
+}
+
+function mergeRecords<T extends { id: string }>(
+  current: readonly T[],
+  next: readonly T[],
+): T[] {
+  const records = new Map(current.map((record) => [record.id, record]));
+  for (const record of next) records.set(record.id, record);
+  return [...records.values()];
 }

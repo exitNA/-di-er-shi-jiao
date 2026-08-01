@@ -3,8 +3,9 @@ import type {
   SourcesModule as SourcesModuleData,
 } from "@/features/analysis/domain/contracts";
 import { ConfidenceMeter } from "./confidence-meter";
-import { StatementSection } from "./report-module";
+import { ReportChallengeButton, StatementSection } from "./report-module";
 import { TraceabilityBadge } from "./traceability-badge";
+import { reportItemAnchorId } from "@/features/conversation/components/revision-history";
 
 const relationLabels: Record<
   SourcesModuleData["relations"][number]["relation"],
@@ -36,7 +37,12 @@ export function SourcesModule({ data }: { data: SourcesModuleData }) {
               return (
                 <li
                   key={`${relation.claimId}-${relation.sourceId}-${index}`}
-                  id={`source-relation-${relation.claimId}-${relation.sourceId}`}
+                  id={reportItemAnchorId({
+                    moduleType: "sources",
+                    section: "relations",
+                    itemId: `${relation.claimId}:${relation.sourceId}`,
+                  })}
+                  tabIndex={-1}
                   className="rounded-lg bg-neutral-50 p-4"
                 >
                   <p className="leading-7">{claim.text}</p>
@@ -48,6 +54,11 @@ export function SourcesModule({ data }: { data: SourcesModuleData }) {
                   </div>
                   <ConfidenceMeter confidence={claim.confidence} />
                   <SourceLink source={source} />
+                  <ReportChallengeButton
+                    section="relations"
+                    itemId={`${relation.claimId}:${relation.sourceId}`}
+                    label="质疑：信源关系"
+                  />
                 </li>
               );
             })}

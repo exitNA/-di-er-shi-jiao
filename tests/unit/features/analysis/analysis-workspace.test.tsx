@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { AnalysisWorkspace } from "@/features/analysis/components/analysis-workspace";
 import type {
@@ -10,6 +10,7 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   retryModule: vi.fn().mockResolvedValue(undefined),
+  refreshSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/features/analysis/hooks/use-analysis-stream", () => ({
@@ -17,8 +18,13 @@ vi.mock("@/features/analysis/hooks/use-analysis-stream", () => ({
     snapshot: initialSnapshot,
     connectionState: initialSnapshot.status === "completed" ? "closed" : "connected",
     retryModule: mocks.retryModule,
+    refreshSnapshot: mocks.refreshSnapshot,
   }),
 }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 it("renders the six fixed modules in product order with text states", () => {
   const current = snapshot({
@@ -82,20 +88,216 @@ it("uses one polite status region, keeps focus and shows the fixed disclaimer", 
   ).toBeInTheDocument();
 });
 
+it("challenges a risk by stable target and keeps focus when the snapshot updates", async () => {
+  let resolveChallenge: (response: Response) => void = () => undefined;
+  const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (url.endsWith("/challenges")) {
+      return new Promise<Response>((resolve) => {
+        resolveChallenge = resolve;
+      });
+    }
+    return Promise.resolve(Response.json({ ok: true }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const current = completedRiskSnapshot();
+  const { rerender } = render(<AnalysisWorkspace initialSnapshot={current} />);
+
+  await userEvent.click(screen.getByRole("button", { name: "质疑：认知风险" }));
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "质疑内容" }),
+    "这项风险误读了原文。",
+  );
+  const submit = screen.getByRole("button", { name: "提交质疑" });
+  await userEvent.click(submit);
+
+  expect(screen.getByText("质疑处理中…")).toBeInTheDocument();
+  const challengeCall = fetchMock.mock.calls.find(([url]) =>
+    String(url).endsWith("/challenges"),
+  );
+  expect(challengeCall).toBeDefined();
+  expect(JSON.parse(String((challengeCall?.[1] as RequestInit).body))).toMatchObject({
+    target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+    content: "这项风险误读了原文。",
+  });
+
+  resolveChallenge(
+    Response.json({
+      ok: true,
+      messageId: "11111111-1111-4111-8111-111111111111",
+      revisionId: "33333333-3333-4333-8333-333333333333",
+      created: true,
+      status: "completed",
+    }),
+  );
+  await waitFor(() => expect(mocks.refreshSnapshot).toHaveBeenCalledOnce());
+  submit.focus();
+
+  rerender(
+    <AnalysisWorkspace
+      initialSnapshot={{
+        ...current,
+        currentVersion: 1,
+        lastEventId: 2,
+        messages: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            reportId: current.reportId,
+            role: "user",
+            target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+            content: "这项风险误读了原文。",
+            status: "completed",
+            createdAt: "2026-08-01T01:00:00.000Z",
+          },
+          {
+            id: "22222222-2222-4222-8222-222222222222",
+            reportId: current.reportId,
+            role: "agent",
+            target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+            content: "复核后已修订报告。",
+            status: "completed",
+            createdAt: "2026-08-01T01:01:00.000Z",
+          },
+        ],
+        revisions: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            triggeringMessageId: "11111111-1111-4111-8111-111111111111",
+            fromVersion: 0,
+            toVersion: 1,
+            changes: [
+              {
+                target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+                reason: "原解释超出了原文证据。",
+                newEvidenceSourceIds: ["source-new"],
+                summary: "收窄风险解释。",
+              },
+            ],
+            status: "completed",
+            createdAt: "2026-08-01T01:01:00.000Z",
+          },
+        ],
+      }}
+    />,
+  );
+
+  expect(submit).toHaveFocus();
+  expect(screen.getByText("修订理由：原解释超出了原文证据。")).toBeInTheDocument();
+  expect(screen.getByText("新增证据：source-new")).toBeInTheDocument();
+});
+
+it("selects shared statements and source relations by stable target", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ ok: true })));
+  const claim = {
+    id: "claim-1",
+    text: "待核对主张",
+    origin: "source_material" as const,
+    sourceMaterialQuote: "原文",
+    confidence: { score: 0.8, rationale: "测试依据" },
+  };
+  render(
+    <AnalysisWorkspace
+      initialSnapshot={snapshot({
+        status: "completed",
+        modules: {
+          ...emptyModules(),
+          overview: {
+            status: "completed",
+            version: 1,
+            payload: {
+              coreClaims: [claim],
+              mainDisputes: [],
+              topRisks: [],
+              keyUnknowns: [],
+              safetyNotice: null,
+            },
+          },
+          sources: {
+            status: "completed",
+            version: 1,
+            payload: {
+              claims: [claim],
+              sources: [
+                {
+                  id: "source-1",
+                  title: "外部研究",
+                  url: "https://example.com/research",
+                  domain: "example.com",
+                  publisher: "示例研究院",
+                  publishedAt: null,
+                  qualityTier: 2,
+                  excerpt: "研究摘要",
+                },
+              ],
+              relations: [
+                {
+                  claimId: "claim-1",
+                  sourceId: "source-1",
+                  relation: "challenges",
+                },
+              ],
+              gaps: [],
+            },
+          },
+        },
+      })}
+    />,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "质疑：核心主张" }));
+  expect(
+    screen.getByText("当前条目：速览 / 核心主张 / claim-1"),
+  ).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "质疑：信源关系" }));
+  expect(
+    screen.getByText(
+      "当前条目：信源对照 / 信源关系 / claim-1:source-1",
+    ),
+  ).toBeInTheDocument();
+});
+
 function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
     jobId: "job-1",
+    reportId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    currentVersion: 0,
     status: "running",
     configVersion: "baseline-v1",
     materialPreview: "待分析材料",
     createdAt: "2026-07-30T00:00:00.000Z",
     updatedAt: "2026-07-30T00:00:00.000Z",
     lastEventId: 0,
+    messages: [],
+    revisions: [],
     modules: emptyModules(),
     ...overrides,
   };
+}
+
+function completedRiskSnapshot(): AnalysisSnapshot {
+  return snapshot({
+    status: "completed",
+    modules: {
+      ...emptyModules(),
+      risks: {
+        status: "completed",
+        version: 1,
+        payload: {
+          items: [
+            {
+              id: "risk-1",
+              type: "emotional_inducement",
+              sourceMaterialQuote: "只有冷血的人才会质疑。",
+              explanation: "用道德评价替代事实依据。",
+              confidence: { score: 0.9, rationale: "原文措辞明确" },
+            },
+          ],
+        },
+      },
+    },
+  });
 }
 
 function emptyModules(): AnalysisSnapshot["modules"] {
