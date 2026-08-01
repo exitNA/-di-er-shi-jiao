@@ -36,7 +36,7 @@ it("presents an agent workspace with current findings", () => {
   render(<AnalysisWorkspace initialSnapshot={current} />);
 
   expect(screen.getByText("与第二视角一起推理")).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "当前思考画布" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "观点地图" })).toBeInTheDocument();
   expect(screen.queryByText("认知体检报告")).not.toBeInTheDocument();
   expect(screen.getByText("速览等待分析")).toBeInTheDocument();
   expect(screen.getByText("论证骨架分析中")).toBeInTheDocument();
