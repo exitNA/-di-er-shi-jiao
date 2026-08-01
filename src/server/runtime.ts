@@ -8,5 +8,5 @@ export function requestPath(url: string | undefined): string {
 }
 
 export function shouldLogAccess(path: string): boolean {
-  return !path.startsWith("/_next/") && path !== "/favicon.ico" && !path.startsWith("/.well-known/");
+  return !path.startsWith("/_next/") && !path.startsWith("/__nextjs_") && path !== "/favicon.ico" && !path.startsWith("/.well-known/");
 }

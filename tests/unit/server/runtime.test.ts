@@ -17,5 +17,6 @@ it("keeps access logs focused on pages and APIs", () => {
   expect(shouldLogAccess("/")).toBe(true);
   expect(shouldLogAccess("/api/auth/login")).toBe(true);
   expect(shouldLogAccess("/_next/static/chunk.js")).toBe(false);
+  expect(shouldLogAccess("/__nextjs_source-map")).toBe(false);
   expect(shouldLogAccess("/favicon.ico")).toBe(false);
 });
