@@ -10,9 +10,15 @@ vi.mock("next/navigation", () => ({
 
 it("opens login and switches to registration", async () => {
   const user = userEvent.setup();
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+  vi.stubGlobal("fetch", fetchMock);
   render(<AuthDialog />);
 
   await user.click(screen.getByRole("button", { name: "登录" }));
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/auth/diagnostics",
+    expect.objectContaining({ body: JSON.stringify({ event: "login_clicked" }) }),
+  );
   expect(screen.getByRole("dialog")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "登录" })).toBeInTheDocument();
 

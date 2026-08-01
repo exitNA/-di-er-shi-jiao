@@ -1,7 +1,10 @@
 import { cookies } from "next/headers";
+import { getLogger } from "@logtape/logtape";
 
 import { loadServerEnv } from "@/server/config/env";
 import { sessionCookieName } from "./current-user";
+
+const logger = getLogger(["second-perspective", "auth"]);
 
 export function assertTrustedMutation(request: Request): Response | null {
   if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") {
@@ -11,9 +14,15 @@ export function assertTrustedMutation(request: Request): Response | null {
 }
 
 export function assertTrustedOrigin(request: Request): Response | null {
-  return request.headers.get("origin") === new URL(loadServerEnv().APP_URL).origin
-    ? null
-    : Response.json({ error: "请求来源无效" }, { status: 403 });
+  const origin = request.headers.get("origin");
+  const expectedOrigin = new URL(loadServerEnv().APP_URL).origin;
+  if (origin === expectedOrigin) return null;
+
+  logger.warning("Rejected request with untrusted origin", {
+    origin: origin ?? "missing",
+    expectedOrigin,
+  });
+  return Response.json({ error: "请求来源无效" }, { status: 403 });
 }
 
 export function getClientIp(request: Request): string {

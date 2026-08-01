@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { getLogger } from "@logtape/logtape";
 import { useRouter } from "next/navigation";
 
 import {
@@ -13,6 +14,19 @@ import {
 import { AuthForm } from "./auth-form";
 
 type AuthMode = "login" | "register";
+type AuthDialogEvent = "login_clicked" | "dialog_opened" | "dialog_closed" | "mode_changed";
+
+const logger = getLogger(["second-perspective", "auth"]);
+
+function recordEvent(event: AuthDialogEvent) {
+  logger.info("Auth dialog event", { event });
+  void fetch("/api/auth/diagnostics", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event }),
+    keepalive: true,
+  }).catch(() => logger.warning("Auth dialog diagnostic delivery failed", { event }));
+}
 
 export function AuthDialog() {
   const router = useRouter();
@@ -21,15 +35,29 @@ export function AuthDialog() {
   const registering = mode === "register";
 
   function handleSuccess() {
+    recordEvent("dialog_closed");
     setOpen(false);
     router.refresh();
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    recordEvent(nextOpen ? "dialog_opened" : "dialog_closed");
+    setOpen(nextOpen);
+  }
+
+  function switchMode() {
+    recordEvent("mode_changed");
+    setMode(registering ? "login" : "register");
+  }
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          recordEvent("login_clicked");
+          setOpen(true);
+        }}
         className="rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-white"
       >
         登录
@@ -44,7 +72,7 @@ export function AuthDialog() {
         <AuthForm mode={mode} onSuccess={handleSuccess} />
         <button
           type="button"
-          onClick={() => setMode(registering ? "login" : "register")}
+          onClick={switchMode}
           className="text-sm text-ink-soft underline"
         >
           {registering ? "已有账号？登录" : "创建账号"}
