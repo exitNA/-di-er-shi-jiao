@@ -26,9 +26,10 @@ export async function GET(request: Request, context: RouteContext) {
         while (!request.signal.aborted && Date.now() < deadline) {
           const events = await repository.listEvents(user.id, jobId, cursor, 100);
           for (const event of events) {
+            const isAgentOutput = event.eventType === "agent.output.delta";
             controller.enqueue(
               encoder.encode(
-                `id: ${event.id}\nevent: changed\ndata: ${JSON.stringify({ eventType: event.eventType })}\n\n`,
+                `id: ${event.id}\nevent: ${isAgentOutput ? "agent-output" : "changed"}\ndata: ${JSON.stringify(isAgentOutput ? event.payload : { eventType: event.eventType })}\n\n`,
               ),
             );
             cursor = event.id;

@@ -254,7 +254,8 @@ export type NewAnalysisEvent = {
     | "report.revised"
     | "agent.run.completed"
     | "agent.run.interrupted"
-    | "agent.tool.updated";
+    | "agent.tool.updated"
+    | "agent.output.delta";
   payload: Record<string, string | number | boolean | null>;
   now: Date;
 };

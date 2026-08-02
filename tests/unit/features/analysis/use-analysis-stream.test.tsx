@@ -32,6 +32,15 @@ class MockEventSource {
       new MessageEvent("changed", { lastEventId }),
     );
   }
+
+  emitAgentOutput(text: string, lastEventId = "1") {
+    this.listeners.get("agent-output")?.(
+      new MessageEvent("agent-output", {
+        data: JSON.stringify({ text }),
+        lastEventId,
+      }),
+    );
+  }
 }
 
 describe("useAnalysisStream", () => {
@@ -72,6 +81,17 @@ describe("useAnalysisStream", () => {
       status: "completed",
       version: 1,
     });
+  });
+
+  it("renders streamed Agent output without waiting for a snapshot refresh", async () => {
+    const { result } = renderHook(() => useAnalysisStream("job-1", snapshot()));
+
+    await act(async () => {
+      MockEventSource.instances[0].emitAgentOutput("正在核对论证。", "1");
+      MockEventSource.instances[0].emitAgentOutput("已完成。", "2");
+    });
+
+    expect(result.current.agentOutput).toBe("正在核对论证。已完成。");
   });
 
   it("ignores module versions older than the current snapshot", async () => {

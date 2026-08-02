@@ -24,12 +24,14 @@ export function ConversationPanel({
   messages = [],
   activeRun,
   selectedTarget,
+  agentOutput = "",
   onRefresh,
 }: {
   jobId: string;
   messages?: readonly ConversationMessage[];
   activeRun?: WorkspaceAgentRun | null;
   selectedTarget?: ReportItemTarget;
+  agentOutput?: string;
   onRefresh: () => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState("");
@@ -134,6 +136,12 @@ export function ConversationPanel({
             </li>
           ))}
         </ol>
+      ) : null}
+      {agentOutput ? (
+        <div className="mt-3 rounded-2xl bg-forest-soft/65 p-4" aria-live="polite">
+          <p className="text-sm font-medium">第二视角 Agent</p>
+          <p className="mt-1 leading-7">{agentOutput}</p>
+        </div>
       ) : null}
 
       {isProcessing ? (

@@ -37,11 +37,13 @@ export type WorkspaceAgentContextRepository = Pick<
   | "getOwnedSnapshot"
   | "listPersistedAgentToolArtifacts"
   | "listCompletedWorkspaceToolNames"
+  | "appendEvent"
 >;
 
 export type WorkspaceAgentToolExecutor = Pick<WorkspaceToolExecutor, "execute">;
 
 type WorkspaceAgentContext = AgentToolContext & {
+  userId: string;
   kind: "baseline" | "challenge";
   completedTools: WorkspaceToolName[];
 };
@@ -81,10 +83,20 @@ export class WorkspaceAgentRuntime {
         tools: createAiSdkTools(this.executor, context),
         stopWhen: stepCountIs(16),
       });
-      await agent.generate({
+      const stream = await agent.stream({
         prompt: promptForRun(context),
         abortSignal: input.signal,
       });
+      for await (const part of stream.fullStream) {
+        if (part.type !== "text-delta" || !part.text) continue;
+        await this.repository.appendEvent({
+          jobId: input.workspaceId,
+          userId: context.userId,
+          eventType: "agent.output.delta",
+          payload: { agentRunId: input.agentRunId, text: part.text },
+          now: new Date(),
+        });
+      }
       if (context.kind === "challenge") {
         await assertChallengeRunCompleted(this.repository, input, context.messageId);
       } else {
@@ -137,6 +149,7 @@ export async function loadWorkspaceAgentContext(
   return {
     workspaceId: input.workspaceId,
     agentRunId: input.agentRunId,
+    userId: job.userId,
     signal: input.signal,
     kind: run.kind,
     completedTools: [...completedTools],

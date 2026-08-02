@@ -22,6 +22,7 @@ export function useAnalysisStream(
   initialSnapshot: AnalysisSnapshot,
 ) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [agentOutput, setAgentOutput] = useState("");
   const [connectionState, setConnectionState] =
     useState<AnalysisConnectionState>(
       shouldUseNetwork(initialSnapshot) ? "connecting" : "closed",
@@ -42,6 +43,7 @@ export function useAnalysisStream(
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a new job needs its server snapshot before subscribing.
     setSnapshot(initialSnapshot);
+    setAgentOutput("");
     lastCursor.current = initialSnapshot.lastEventId;
   }, [workspaceId, initialSnapshot]);
 
@@ -143,6 +145,22 @@ export function useAnalysisStream(
         }
         void fetchSnapshot().catch(() => undefined);
       });
+      source.addEventListener("agent-output", (event) => {
+        if (!active) return;
+        const message = event as MessageEvent<string>;
+        const cursor = Number(message.lastEventId);
+        if (Number.isSafeInteger(cursor)) {
+          lastCursor.current = Math.max(lastCursor.current, cursor);
+        }
+        try {
+          const payload = JSON.parse(message.data) as { text?: unknown };
+          if (typeof payload.text === "string") {
+            setAgentOutput((current) => current + payload.text);
+          }
+        } catch {
+          // Ignore malformed transient output; the durable snapshot remains authoritative.
+        }
+      });
       source.onerror = () => {
         if (!active || polling) return;
         failures += 1;
@@ -174,6 +192,7 @@ export function useAnalysisStream(
 
   return {
     snapshot,
+    agentOutput,
     connectionState,
     retryModule,
     applySnapshot,

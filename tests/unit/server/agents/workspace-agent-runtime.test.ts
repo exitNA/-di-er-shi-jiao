@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
@@ -49,15 +50,16 @@ describe("WorkspaceAgentRuntime", () => {
       executor.executed.map(() => ({
         workspaceId,
         agentRunId,
+        userId: "user-1",
         signal,
         kind: "baseline",
         completedTools: [],
       })),
     );
     expect(
-      model.doGenerateCalls[0]?.tools?.map((candidate) => candidate.name).sort(),
+      model.doStreamCalls[0]?.tools?.map((candidate) => candidate.name).sort(),
     ).toEqual(workspaceToolNames.filter((name) => name !== "review_target").sort());
-    expect(model.doGenerateCalls[0]?.abortSignal).toBe(signal);
+    expect(model.doStreamCalls[0]?.abortSignal).toBe(signal);
   });
 
   it("returns interrupted when Agent generation is cancelled", async () => {
@@ -82,14 +84,7 @@ describe("WorkspaceAgentRuntime", () => {
 
   it("rejects a baseline run when the model stops before publishing a valid report", async () => {
     const model = new MockLanguageModelV4({
-      doGenerate: async () => ({
-        content: [{ type: "text" as const, text: "done" }],
-        finishReason: { unified: "stop" as const, raw: undefined },
-        usage: {
-          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 1, text: 1, reasoning: 0 },
-        },
-      }),
+      doStream: async () => textStream("done"),
     });
     const runtime = new WorkspaceAgentRuntime(
       model,
@@ -106,19 +101,7 @@ describe("WorkspaceAgentRuntime", () => {
 
   it("rejects a baseline run when the model exhausts the tool-loop step limit", async () => {
     const model = new MockLanguageModelV4({
-      doGenerate: async () => ({
-        content: [{
-          type: "tool-call" as const,
-          toolCallId: "repeated-call",
-          toolName: "analyze_argument",
-          input: "{}",
-        }],
-        finishReason: { unified: "tool-calls" as const, raw: undefined },
-        usage: {
-          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 1, text: 1, reasoning: 0 },
-        },
-      }),
+      doStream: async () => toolStream(["analyze_argument"]),
     });
     const runtime = new WorkspaceAgentRuntime(
       model,
@@ -131,7 +114,7 @@ describe("WorkspaceAgentRuntime", () => {
       agentRunId,
       signal: new AbortController().signal,
     })).rejects.toThrow("BASELINE_INCOMPLETE");
-    expect(model.doGenerateCalls).toHaveLength(16);
+    expect(model.doStreamCalls).toHaveLength(16);
   });
 
   it("does not expose a baseline tool whose module was durably completed before cancellation", async () => {
@@ -152,7 +135,7 @@ describe("WorkspaceAgentRuntime", () => {
       signal: new AbortController().signal,
     })).resolves.toEqual({ status: "completed" });
 
-    expect(model.doGenerateCalls[0]?.tools?.map((candidate) => candidate.name)).not.toContain(
+    expect(model.doStreamCalls[0]?.tools?.map((candidate) => candidate.name)).not.toContain(
       "analyze_argument",
     );
     expect(executor.executed).not.toContain("analyze_argument");
@@ -337,6 +320,9 @@ function baselineRepository(
     async listPersistedAgentToolArtifacts(input: { toolName: WorkspaceToolName }) {
       return artifacts[input.toolName] ?? [];
     },
+    async appendEvent() {
+      return 1;
+    },
   } as WorkspaceAgentContextRepository & {
     complete(name: WorkspaceToolName): void;
     listPersistedAgentToolArtifacts(input: {
@@ -367,26 +353,41 @@ function moduleVersions(argument = 1) {
 function toolLoopModel(steps: WorkspaceToolName[][]): MockLanguageModelV4 {
   let call = 0;
   return new MockLanguageModelV4({
-    doGenerate: async () => {
+    doStream: async () => {
       const toolNames = steps[call++];
-      return {
-        content: toolNames
-          ? toolNames.map((toolName, index) => ({
-              type: "tool-call" as const,
-              toolCallId: `call-${call}-${index}`,
-              toolName,
-              input: "{}",
-            }))
-          : [{ type: "text" as const, text: "done" }],
-        finishReason: {
-          unified: toolNames ? ("tool-calls" as const) : ("stop" as const),
-          raw: undefined,
-        },
+      return toolNames ? toolStream(toolNames, call) : textStream("done");
+    },
+  });
+}
+
+function textStream(text: string) {
+  return streamResult([
+    { type: "text-start" as const, id: "text-1" },
+    { type: "text-delta" as const, id: "text-1", delta: text },
+    { type: "text-end" as const, id: "text-1" },
+  ], "stop");
+}
+
+function toolStream(toolNames: WorkspaceToolName[], call = 0) {
+  return streamResult(toolNames.map((toolName, index) => ({
+    type: "tool-call" as const,
+    toolCallId: `call-${call}-${index}`,
+    toolName,
+    input: "{}",
+  })), "tool-calls");
+}
+
+function streamResult(chunks: object[], finishReason: "stop" | "tool-calls") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [...chunks, {
+        type: "finish" as const,
+        finishReason: { unified: finishReason, raw: undefined },
         usage: {
           inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
           outputTokens: { total: 1, text: 1, reasoning: 0 },
         },
-      };
-    },
-  });
+      }],
+    }),
+  };
 }
