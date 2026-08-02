@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 import type { ReportItemTarget, ReportRevisionChange } from "@/features/analysis/domain/contracts";
+import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
 
 const newId = () => randomUUID();
 const now = (name: string) => timestamp(name, { withTimezone: true });
@@ -55,6 +56,44 @@ export const analysisJobs = pgTable(
     ),
   ],
 );
+
+export const agentRuns = pgTable(
+  "agent_runs",
+  {
+    id: uuid("id").primaryKey().$defaultFn(newId),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => analysisJobs.id),
+    messageId: uuid("message_id").references(() => conversationMessages.id),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    configVersion: text("config_version").notNull(),
+    triggerRunId: text("trigger_run_id"),
+    cancellationRequestedAt: now("cancellation_requested_at"),
+    startedAt: now("started_at"),
+    completedAt: now("completed_at"),
+    createdAt: now("created_at").notNull().defaultNow(),
+    updatedAt: now("updated_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("agent_runs_job_id_created_at_idx").on(table.jobId, table.createdAt),
+    index("agent_runs_message_id_idx").on(table.messageId),
+  ],
+);
+
+export const agentToolCalls = pgTable("agent_tool_calls", {
+  id: uuid("id").primaryKey().$defaultFn(newId),
+  agentRunId: uuid("agent_run_id")
+    .notNull()
+    .references(() => agentRuns.id),
+  toolName: text("tool_name").notNull(),
+  status: text("status").notNull(),
+  summary: text("summary").notNull(),
+  errorCode: text("error_code"),
+  artifact: jsonb("artifact").$type<WorkspaceToolArtifact>(),
+  createdAt: now("created_at").notNull().defaultNow(),
+  completedAt: now("completed_at"),
+});
 
 export const expertRuns = pgTable(
   "expert_runs",

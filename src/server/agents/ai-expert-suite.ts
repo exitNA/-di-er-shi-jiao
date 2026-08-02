@@ -1,11 +1,8 @@
-import { z } from "zod";
 import { getDomain } from "tldts";
 import {
   argumentModuleSchema,
   baselineDraftSchema,
-  overviewModuleSchema,
   perspectivesModuleSchema,
-  reflectionModuleSchema,
   risksModuleSchema,
   sourcesModuleSchema,
   type ExternalSource,
@@ -19,14 +16,16 @@ import {
 } from "@/features/conversation/domain/contracts";
 import type { StructuredGenerator } from "@/server/ai/structured-generator";
 import type { SearchClient, SearchResult } from "@/server/search/search-client";
-import type {
-  DraftReview,
-  DraftReviewInput,
-  DraftRevisionInput,
-  ExpertInput,
-  ExpertResult,
-  ExpertSuite,
-  SynthesisInput,
+import {
+  draftReviewSchema,
+  synthesisOutputSchema,
+  type DraftReview,
+  type DraftReviewInput,
+  type DraftRevisionInput,
+  type ExpertInput,
+  type ExpertResult,
+  type ExpertSuite,
+  type SynthesisInput,
 } from "./expert-suite";
 import { argumentPrompt, argumentSystemInstruction } from "./prompts/argument";
 import { sourceMaterial } from "./prompts/common";
@@ -34,19 +33,6 @@ import { draftReviewPrompt, perspectivesPrompt, perspectivesSystemInstruction } 
 import { risksPrompt, risksSystemInstruction } from "./prompts/risks";
 import { sourcesPrompt, sourcesSystemInstruction } from "./prompts/sources";
 import { synthesisPrompt, synthesisSystemInstruction } from "./prompts/synthesis";
-
-const draftReviewSchema = z.object({
-  findings: z.array(
-    z.object({
-      moduleType: z.enum(["overview", "argument", "perspectives", "sources", "risks", "reflection"]),
-      statementId: z.string().min(1).optional(),
-      problem: z.string().min(1),
-      requiredChange: z.string().min(1),
-    }),
-  ),
-});
-
-const synthesisSchema = z.object({ overview: overviewModuleSchema, reflection: reflectionModuleSchema });
 
 type SourceCandidate = SearchResult & {
   id: string;
@@ -56,7 +42,7 @@ type SourceCandidate = SearchResult & {
 };
 
 export class AiExpertSuite implements ExpertSuite {
-  constructor(private readonly dependencies: { generator: StructuredGenerator; searchClient: SearchClient }) {}
+  constructor(private readonly dependencies: { generator: StructuredGenerator; searchClient?: SearchClient }) {}
 
   analyzeArgument(input: ExpertInput) {
     return this.dependencies.generator.generate({
@@ -79,10 +65,12 @@ export class AiExpertSuite implements ExpertSuite {
   }
 
   async researchSources(input: ExpertInput): Promise<ExpertResult<SourcesModule>> {
-    const results = await mapWithConcurrency(sourceQueries(input.material), 2, (query) =>
-      this.dependencies.searchClient.search({ query, topic: "general", maxResults: 5, signal: input.abortSignal }),
-    );
-    const candidates = selectCandidates(results.flat().slice(0, 15));
+    const searchClient = this.dependencies.searchClient;
+    const candidates = searchClient
+      ? selectCandidates((await mapWithConcurrency(sourceQueries(input.material), 2, (query) =>
+        searchClient.search({ query, topic: "general", maxResults: 5, signal: input.abortSignal }),
+      )).flat().slice(0, 15))
+      : [];
     const generated = await this.dependencies.generator.generate({
       operation: "sources",
       system: sourcesSystemInstruction,
@@ -91,7 +79,12 @@ export class AiExpertSuite implements ExpertSuite {
       abortSignal: input.abortSignal,
     });
 
-    return { ...generated, value: constrainSources(generated.value, candidates) };
+    return {
+      ...generated,
+      value: searchClient
+        ? constrainSources(generated.value, candidates)
+        : { ...generated.value, sources: [], relations: [], gaps: [] },
+    };
   }
 
   async reviewRisks(input: ExpertInput): Promise<ExpertResult<RisksModule>> {
@@ -119,7 +112,7 @@ export class AiExpertSuite implements ExpertSuite {
         sources: input.sources,
         risks: input.risks,
       }),
-      schema: synthesisSchema,
+      schema: synthesisOutputSchema,
       abortSignal: input.abortSignal,
     });
   }

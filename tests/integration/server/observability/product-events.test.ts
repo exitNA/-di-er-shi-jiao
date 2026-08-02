@@ -244,13 +244,19 @@ function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
-    jobId: "11111111-1111-4111-8111-111111111111",
+    workspaceId: "11111111-1111-4111-8111-111111111111",
+    reportId: "22222222-2222-4222-8222-222222222222",
+    currentVersion: 0,
     status: "running",
     configVersion: "baseline-v1",
     materialPreview: "待分析材料",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     lastEventId: 0,
+    activeRun: null,
+    toolCalls: [],
+    messages: [],
+    revisions: [],
     modules: emptyModules(),
     ...overrides,
   };

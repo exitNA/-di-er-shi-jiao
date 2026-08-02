@@ -22,6 +22,27 @@
       "when": 1785575967060,
       "tag": "0002_m2_revision_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785580800000,
+      "tag": "0003_real_agent_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785584400000,
+      "tag": "0004_agent_tool_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785592800000,
+      "tag": "0005_agent_run_challenges",
+      "breakpoints": true
     }
   ]
 }

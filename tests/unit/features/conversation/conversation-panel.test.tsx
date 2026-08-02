@@ -184,6 +184,29 @@ it("retries a persisted recoverable challenge with its durable key", async () =>
   });
 });
 
+it("keeps challenge input disabled while an interrupted run awaits resume", () => {
+  render(
+    <ConversationPanel
+      jobId="job-1"
+      messages={[]}
+      activeRun={{
+        id: "22222222-2222-4222-8222-222222222222",
+        workspaceId: "job-1",
+        kind: "baseline",
+        status: "interrupted",
+        configVersion: "agent-v1",
+        cancellationRequestedAt: nowIso,
+        startedAt: nowIso,
+        completedAt: nowIso,
+      }}
+      selectedTarget={target}
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+
+  expect(screen.getByRole("textbox", { name: "继续追问" })).toBeDisabled();
+});
+
 it("renders persisted messages and a revision with a focusable report link", () => {
   const messages: ConversationMessage[] = [
     {
@@ -373,6 +396,8 @@ function message(
   };
 }
 
+const nowIso = "2026-08-02T00:00:00.000Z";
+
 function revision(
   overrides: Partial<ReportRevision> = {},
 ): ReportRevision {
@@ -399,7 +424,7 @@ function analysisSnapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
-    jobId: "job-1",
+    workspaceId: "job-1",
     reportId: "22222222-2222-4222-8222-222222222222",
     currentVersion: 0,
     status: "completed",
@@ -408,6 +433,8 @@ function analysisSnapshot(
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-01T00:00:00.000Z",
     lastEventId: 0,
+    activeRun: null,
+    toolCalls: [],
     messages: [],
     revisions: [],
     modules: Object.fromEntries(

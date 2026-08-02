@@ -16,22 +16,27 @@ openssl rand -hex 32
 
 ## 2. 数据库、迁移、测试清理与备份
 
-启动本地 PostgreSQL 并执行迁移：
+启动本地开发 PostgreSQL，并使用 `.env.local` 的 `DATABASE_URL` 执行迁移：
 
 ```bash
+set -a
+. ./.env.local
+set +a
 pnpm db:init:dev
 ```
 
-本地应用库为 `second_perspective`，隔离测试库为 `second_perspective_test`。集成测试和 E2E 夹具会自动迁移并清理测试库。需要手动清理时，使用仓库内置的安全检查；数据库名不以 `_test` 结尾时命令会拒绝执行：
+集成测试使用独立的 PostgreSQL 测试容器，由测试命令注入固定的 `_test` 数据库 URL：
 
 ```bash
-TEST_DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective_test pnpm exec tsx -e 'import("./tests/helpers/database.ts").then(({ truncateTestDb }) => truncateTestDb())'
+pnpm test:integration
+pnpm test:db:down
 ```
 
-迁移或发布前备份，文件权限保持仅当前用户可读：
+这两个命令不读取 `.env` 或 `.env.local`。
+
+迁移或发布前使用当前环境的 `DATABASE_URL` 备份，文件权限保持仅当前用户可读：
 
 ```bash
-export DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective
 install -d -m 700 backups
 pg_dump --format=custom --no-owner --file "backups/second-perspective-$(date -u +%Y%m%dT%H%M%SZ).dump" "$DATABASE_URL"
 ```
@@ -44,17 +49,21 @@ pg_restore --exit-on-error --no-owner --dbname second_perspective_restore_check 
 dropdb second_perspective_restore_check
 ```
 
-## 3. 无外部依赖的本地 fake 模式
+## 3. 本地真实 Agent 运行
 
 `.env.local` 至少包含：
 
 ```dotenv
 APP_URL=http://localhost:5000
 DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective
-TEST_DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective_test
 AUTH_SECRET=<openssl-rand-hex-32-output>
-AGENT_ADAPTER=fake
+AGENT_ADAPTER=openai-compatible
 ANALYSIS_RUNTIME=in-process
+LLM_BASE_URL=https://<provider-host>/v1
+LLM_API_KEY=<secret>
+LLM_MODEL_ID=<model-id>
+# 可选：启用外部在线搜索。
+TAVILY_API_KEY=<secret>
 ```
 
 启动：
@@ -63,22 +72,27 @@ ANALYSIS_RUNTIME=in-process
 pnpm dev
 ```
 
-访问 <http://localhost:5000/register>。fake 模式是确定性的，不调用 LLM 或搜索服务；前缀
-`[测试：任务中断]` 和 `[测试：信源失败一次]` 仅在非生产环境启用。
+访问 <http://localhost:5000/register>。运行时始终调用真实模型；配置 Tavily 后调用在线搜索服务。
 
-## 4. 真实 LLM 与 Tavily
+### 自动测试与真实 LLM 评估
 
-真实适配器使用 OpenAI 兼容协议，联网搜索始终独立走 Tavily。把以下变量写入运行环境：
+自动测试在测试级预定义桩中验证流程，不依赖确定性 Agent 模式。真实 LLM 输出具有动态性，使用固定样本按[基线报告评测规则](../evaluation/baseline-rubric.md)人工评估。
+
+## 4. 真实前台 Agent 与 Tavily
+
+生产环境唯一支持的适配器是 `openai-compatible`。前台 Agent 使用 OpenAI 兼容协议调用模型；
+配置 Tavily 时，联网搜索独立走 Tavily。把以下必填变量写入运行环境：
 
 ```dotenv
 AGENT_ADAPTER=openai-compatible
 LLM_BASE_URL=https://<provider-host>/v1
 LLM_API_KEY=<secret>
 LLM_MODEL_ID=<model-id>
-TAVILY_API_KEY=<secret>
 LLM_INPUT_USD_PER_MILLION=<non-negative-number>
 LLM_OUTPUT_USD_PER_MILLION=<non-negative-number>
 ```
+
+需要联网搜索时再额外配置 `TAVILY_API_KEY=<secret>`。
 
 CLI 脚本不依赖 Next.js 加载 `.env.local`；在本地先把已填写的文件导出到当前终端：
 
@@ -99,7 +113,7 @@ pnpm probe:llm
 ## 5. Trigger.dev Cloud
 
 1. 在 Trigger.dev Cloud 创建项目，记录 project ref，并为 Web 应用生成 secret key。
-2. 给 Web 应用和 Trigger.dev 任务配置同一组 `DATABASE_URL`、LLM、Tavily 和价格变量。
+2. 给 Web 应用和 Trigger.dev 任务配置同一组 `DATABASE_URL`、LLM 和价格变量；需要在线搜索时，再为两者配置相同的 Tavily Key。
 3. Web 应用配置：
 
 ```dotenv
@@ -126,20 +140,23 @@ pnpm dev
 pnpm exec trigger.dev deploy
 ```
 
-任务 ID 固定为 `run-baseline-analysis`。部署后确认 Trigger.dev 控制台能看到该任务，再发布使用
-`ANALYSIS_RUNTIME=trigger` 的 Web 应用。
+任务 ID 固定为 `run-agent`。每次派发只携带 `workspaceId` 和 `agentRunId`：Web 应用先持久化
+`queued` Agent run，Trigger 任务使用自身 run ID 认领它并进入 `running`，再把取消信号传给
+工作空间 Agent runtime。部署后确认 Trigger.dev 控制台只能看到当前的 `run-agent` 定义，不应再出现
+旧任务定义，然后再发布使用 `ANALYSIS_RUNTIME=trigger` 的 Web 应用。用户终止运行时，派发器调用
+`runs.cancel(triggerRunId)`；Trigger.dev 任务收到的 `signal` 会继续传入模型、搜索和专家工具。
 
 ## 6. 状态与稳定错误码
 
-任务状态：
+工作空间与最新 Agent run 状态：
 
 | 状态 | 含义 | 操作 |
 | --- | --- | --- |
 | `queued` | 已持久化，等待后台执行 | 检查派发器和 Trigger.dev |
 | `running` | 专家或综合流程正在执行 | 等待 SSE；断线时客户端自动轮询 |
-| `partial` | 信源失败，其余报告可用 | 重试失败的信源模块 |
+| `interrupted` | 用户已终止最新 Agent run | 检查原因后从该 run 继续 |
 | `completed` | 六个模块均可用 | 无 |
-| `recoverable` | 非信源专家、编排或派发失败 | 按恢复流程继续 |
+| `recoverable` | Agent、专家、信源或派发失败，已完成内容保留 | 按恢复流程继续 |
 
 模块状态为 `queued`、`running`、`completed` 或 `failed`。失败模块保留已完成模块及其版本。
 
@@ -148,40 +165,41 @@ pnpm exec trigger.dev deploy
 | 类别 | 错误码 |
 | --- | --- |
 | 输入 | `EMPTY`、`TOO_LONG`、`UNSAFE_CONTENT` |
-| 派发与编排 | `DISPATCH_FAILED`、`TASK_INTERRUPTED`、`ORCHESTRATION_FAILED`、`REQUIRED_MODULE_UNAVAILABLE` |
+| Agent 与派发 | `DISPATCH_FAILED`、`AGENT_RUN_INTERRUPTED`、`REQUIRED_TOOL_UNAVAILABLE` |
 | 专家 | `EXPERT_FAILED`、`EXPERT_TIMEOUT`、`INVALID_EXPERT_OUTPUT` |
 | LLM | `LLM_AUTHENTICATION_FAILED`、`LLM_RATE_LIMITED`、`LLM_TIMEOUT`、`LLM_SCHEMA_INVALID`、`LLM_UNKNOWN_ERROR` |
 | 搜索 | `SEARCH_AUTHENTICATION_FAILED`、`SEARCH_RATE_LIMITED`、`SEARCH_QUERY_TOO_LONG`、`SEARCH_UNAVAILABLE`、`SEARCH_UNKNOWN_ERROR` |
 
-表中的英文错误码用于任务状态、事件和安全日志诊断；它们不是当前 HTTP API 的响应字段。读取快照或事件时，未登录返回 `401` 和“请先登录”，资源不属于当前用户或不存在时统一返回 `404` 和“分析不存在”。重试路由成功返回 `202`；模块不支持重试返回 `400`，当前状态不能重试返回 `409`，派发失败返回 `503`，响应正文均为中文 `error`。跨用户读取和重试统一表现为 `404`，不要向调用方泄露资源是否存在。
+表中的英文错误码用于 Agent run、事件和安全日志诊断；它们不是当前 HTTP API 的响应字段。读取快照或事件时，未登录返回 `401` 和“请先登录”，资源不属于当前用户或不存在时统一返回 `404` 和“分析不存在”。重试路由成功返回 `202`；终止和继续成功返回 `200`。不支持的操作返回 `400`，状态冲突返回 `409`，派发失败返回 `503`，响应正文均为中文 `error`。跨用户访问统一表现为 `404`，不要向调用方泄露资源是否存在。
 
 ## 7. 重试与恢复
 
-### 信源降级
+### 已配置搜索时的信源故障
 
-1. 确认任务为 `partial`，且只有 `sources` 为 `failed`。
-2. 先检查 Tavily 凭据、配额和连通性。
-3. 用户在报告页选择“重试信源对照”；接口只重跑该模块。
-4. 确认任务转为 `completed`，原有内容模块仍可用。
+1. 确认工作空间与最新 Agent run 为 `recoverable`，`sources` 为 `failed`，其他已完成专家模块仍可用。
+2. 确认该环境已配置 Tavily 后，检查凭据、配额和连通性。
+3. 用户在报告页选择“继续分析”，或按“可恢复任务”步骤调用 resume API。接口创建新的基线 Agent run，复用工作空间中已持久化的工具产物和模块版本，重新执行失败的信源工具。
+4. 新 run 必须继续执行尚未完成的综合、二次审校、修订和发布检查；确认这些工具完成后，工作空间转为 `completed`，原有内容模块仍可用。
 
 ### 可恢复任务
 
-1. 用 `jobId` 查 Trigger.dev 运行和安全日志，只读取错误码、尝试次数和耗时。
+1. 用 `workspaceId` 和快照中的 `activeRun.id` 查 Trigger.dev 运行和安全日志，只读取错误码、尝试次数和耗时。
 2. 修复凭据、配额或 worker 故障。
-3. 报告页若显示失败模块，使用对应“重试”按钮；它会以
-   `${jobId}:${moduleType}:${nextVersion}` 作为派发幂等键。
-4. `DISPATCH_FAILED` 等没有失败模块可点选时，在受控运维终端恢复整个任务：
+3. 对最新状态为 `interrupted` 或 `recoverable` 的 Agent run，在已登录且通过同源校验的客户端调用
+   `POST /api/analyses/<workspaceId>/runs/<agentRunId>/resume`。接口会创建新的 run，复用前序 run 的
+   kind、configVersion 和工作空间上下文，并以 `${workspaceId}:${newAgentRunId}` 作为派发幂等键。
+4. 需要主动终止 `queued`、`running` 或 `recoverable` 的最新 run 时，调用
+   `POST /api/analyses/<workspaceId>/runs/<agentRunId>/cancel`。服务端先持久化 `interrupted`，再取消
+   对应 Trigger run；后续工具写入会被仓储守卫拒绝。页面显示“任务已终止”和“继续分析”后，确认
+   已完成模块与安全专家摘要仍在工作空间快照中。
 
-```bash
-JOB_ID=<uuid> pnpm exec tsx -e 'import("./src/server/container.ts").then(async ({ getContainer }) => { const jobId = process.env.JOB_ID; if (!jobId) throw new Error("JOB_ID is required"); console.log(await getContainer().baselineOrchestrator.run({ jobId })); })'
-```
-
-只对状态为 `recoverable` 的任务执行；`completed` 任务会拒绝重新获得执行权。恢复前后分别读取
-`GET /api/analyses/<jobId>`，确认已完成模块的版本和内容没有回退。
+继续和终止都只接受当前用户工作空间中的最新 run；不存在、非所属或过期 run ID 统一返回 `404`，
+状态冲突返回 `409`。成功响应是最新工作空间快照。操作前后读取 `GET /api/analyses/<workspaceId>`，
+确认新 run 的状态与已完成模块版本没有回退。所有恢复都通过 Agent run 生命周期执行。
 
 ## 8. 安全日志与 OpenTelemetry
 
-结构化日志只允许记录 `jobId`、`operation`、`errorCode`、`durationMs`、`attempt` 等运行元数据。不得记录完整原文、用户名、密码、会话令牌、prompt、模型 response、API key 或任意未经筛选的异常对象。
+结构化日志只允许记录 `workspaceId`、`agentRunId`、`operation`、`errorCode`、`durationMs`、`attempt` 等运行元数据。不得记录完整原文、用户名、密码、认证会话令牌、prompt、模型 response、API key 或任意未经筛选的异常对象。
 
 启用 OTLP/HTTP trace 导出：
 
@@ -225,7 +243,7 @@ pnpm eval:score <run-directory> --adjudication path/to/adjudication.csv
 | 引用支持率 | `>= 85%` |
 | 高置信风险精确率 | `>= 80%` |
 | 中立性通过率 | `>= 85%` |
-| 报告成功率（含明确的信源降级） | `>= 90%` |
+| 报告成功率 | `>= 90%` |
 | 首模块 P95 | `<= 10s` |
 | 完整基线 P95 | `<= 60s` |
 
@@ -233,7 +251,7 @@ pnpm eval:score <run-directory> --adjudication path/to/adjudication.csv
 
 ## 10. 配置版本回滚
 
-每个任务会持久化 `configVersion`；当前提交入口固定写入 `baseline-v1`。不要直接更新数据库中的版本字段。回滚以已验证的 Git release ref 为单位，同时回滚 Web 与 Trigger.dev 任务：
+工作空间持久化 `baseline-v1`，每个 Agent run 持久化自己的 `agent-v1` configVersion。不要直接更新数据库中的版本字段。回滚以已验证的 Git release ref 为单位，同时回滚 Web 与 Trigger.dev 任务：
 
 ```bash
 KNOWN_GOOD_REF=<release-tag-or-commit>
@@ -261,20 +279,22 @@ pnpm probe:llm
 
 1. 注册或登录，提交一段不含敏感信息的短文本。
 2. 看到论证模块先出现，刷新后内容仍在，最终六模块完成。
-3. 打开一个外部信源，确认标题、发布者、日期和链接可用。
-4. 从历史记录重新打开报告，再退出登录。
-5. 确认 Trigger.dev 只有一次基线派发，OTel 有对应 job/expert spans，日志没有原文或身份凭据。
+3. 在另一次分析中看到首个专家摘要后选择“终止任务”，确认页面提供“继续分析”，且已完成模块和摘要未丢失；继续后报告完成。
+4. 若配置了 Tavily，打开一个外部信源，确认标题、发布者、日期和链接可用。
+5. 从历史记录重新打开报告，再退出登录。
+6. 确认每次运行只有一次 `run-agent` 派发，工作空间快照中的 Agent run 按
+   `queued -> running -> completed` 转换，OTel 有对应 job/expert spans，日志没有原文或身份凭据。
 
 真实服务 gate 还必须完成 `pnpm eval:run` 和双评审后的 `pnpm eval:score`。
 
 ## 12. 密钥轮换
 
-1. 在 LLM、Tavily 或 Trigger.dev 供应商创建新密钥，旧密钥暂不撤销。
+1. 在 LLM、Trigger.dev，以及已启用时的 Tavily 供应商创建新密钥，旧密钥暂不撤销。
 2. 同时更新 Web 和 Trigger.dev Cloud 环境变量并重新部署。
 3. 运行 `pnpm probe:llm` 和生产 smoke checks。
 4. 确认新任务成功后撤销旧密钥。
 
-`AUTH_SECRET` 当前用于认证限流键的 HMAC；轮换会切换限流键空间，但不会主动撤销数据库中的会话。若事件要求所有用户重新登录，在部署新 secret 后显式撤销活动会话：
+`AUTH_SECRET` 当前用于认证限流键的 HMAC；轮换会切换限流键空间，但不会主动撤销数据库中的认证会话。若事件要求所有用户重新登录，在部署新 secret 后显式撤销活动认证会话：
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE sessions SET revoked_at = now() WHERE revoked_at IS NULL;"

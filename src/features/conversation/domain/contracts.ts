@@ -36,12 +36,6 @@ export type TargetedReview = {
   };
 };
 
-export type RevisionRunResult =
-  | { status: "completed"; revisionId?: string }
-  | { status: "running" }
-  | { status: "recoverable" }
-  | { status: "not-found" };
-
 export function targetedReviewSchema(
   moduleType: ReportModuleType,
   allowedEvidenceSourceIds: ReadonlySet<string>,

@@ -16,6 +16,14 @@ describe("analysis job state transitions", () => {
     expect(canTransitionJob("partial", "completed")).toBe(true);
   });
 
+  it("allows active and recoverable workspaces to be interrupted and resumed", () => {
+    expect(canTransitionJob("queued", "interrupted")).toBe(true);
+    expect(canTransitionJob("running", "interrupted")).toBe(true);
+    expect(canTransitionJob("partial", "interrupted")).toBe(true);
+    expect(canTransitionJob("recoverable", "interrupted")).toBe(true);
+    expect(canTransitionJob("interrupted", "running")).toBe(true);
+  });
+
   it("throws for an invalid job transition", () => {
     expect(() => assertJobTransition("queued", "completed")).toThrow(
       /queued.*completed/,

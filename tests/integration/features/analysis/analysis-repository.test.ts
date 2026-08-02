@@ -9,7 +9,7 @@ import {
 } from "@/features/analysis/domain/contracts";
 import { PostgresAnalysisRepository } from "@/features/analysis/server/postgres-analysis-repository";
 import type { CompleteRevision } from "@/features/analysis/server/analysis-repository";
-import { analysisEvents, reportModules, reportSources, reports } from "@/server/db/schema/analysis";
+import { agentRuns, analysisEvents, analysisJobs, reportModules, reportSources, reports } from "@/server/db/schema/analysis";
 import { users } from "@/server/db/schema/auth";
 import { createTestDb, migrateTestDb, truncateTestDb } from "../../../helpers/database";
 
@@ -106,6 +106,590 @@ describe("PostgresAnalysisRepository", () => {
     const { input } = await createAnalysis(owner);
 
     await expect(repository.getOwnedSnapshot(await createUser(), input.jobId)).resolves.toBeNull();
+  });
+
+  it("lists only owned history newest first and keeps older reports reopenable", async () => {
+    const owner = await createUser();
+    const older = await createAnalysis(owner);
+    const newer = await createAnalysis(owner);
+    const foreign = await createAnalysis(await createUser());
+    await db.update(analysisJobs).set({ createdAt: new Date("2026-07-28T00:00:00.000Z") })
+      .where(eq(analysisJobs.id, older.input.jobId));
+    await db.update(analysisJobs).set({ createdAt: new Date("2026-07-29T00:00:00.000Z") })
+      .where(eq(analysisJobs.id, newer.input.jobId));
+    await db.update(analysisJobs).set({ createdAt: new Date("2026-07-30T00:00:00.000Z") })
+      .where(eq(analysisJobs.id, foreign.input.jobId));
+
+    const history = await repository.listOwnedHistory(owner, 20);
+
+    expect(history.map((item) => item.jobId)).toEqual([
+      newer.input.jobId,
+      older.input.jobId,
+    ]);
+    await expect(repository.getOwnedSnapshot(owner, older.input.jobId)).resolves
+      .toMatchObject({ workspaceId: older.input.jobId });
+  });
+
+  it("maps persisted jobs to workspace snapshots before Agent runs are stored", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+
+    const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    expect(snapshot).toMatchObject({
+      workspaceId: input.jobId,
+      activeRun: null,
+      toolCalls: [],
+    });
+  });
+
+  it("persists a cancelable Agent run and exposes only its safe tool summary", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const run = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!run) throw new Error("Expected owned Agent run");
+    await expect(repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      now,
+    })).resolves.toBe(true);
+    const otherUserId = await createUser();
+    await expect(repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId: otherUserId,
+      agentRunId: run.id,
+      toolName: "analyze_argument",
+      summary: "不应写入其他用户的工作空间。",
+      now,
+    })).resolves.toBeNull();
+    const toolCall = await repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      toolName: "analyze_argument",
+      summary: "正在核对核心主张。",
+      now,
+    });
+    if (!toolCall || !("id" in toolCall)) throw new Error("Expected owned tool call");
+    const persistedArtifact = {
+      kind: "baseline_module" as const,
+      moduleType: "argument" as const,
+      outputVersion: 1,
+    };
+    await expect(repository.saveAgentToolArtifact({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      id: toolCall.id,
+      artifact: persistedArtifact,
+    })).resolves.toBe(true);
+
+    const cancellation = await repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      now,
+    });
+    expect(cancellation).toMatchObject({ triggerRunId: null, eventId: expect.any(Number) });
+    await expect(repository.listEvents(userId, input.jobId, 0, 10)).resolves.toContainEqual(
+      expect.objectContaining({ id: cancellation?.eventId, eventType: "agent.run.interrupted" }),
+    );
+    await expect(repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      toolName: "review_risks",
+      summary: "终止后不能新增工具调用。",
+      now,
+    })).resolves.toBeNull();
+    await expect(repository.finishAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      id: toolCall.id,
+      status: "completed",
+      summary: "终止后不能完成工具调用。",
+      now,
+    })).resolves.toBe(false);
+    await expect(repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      now,
+    })).resolves.toBe(false);
+    await expect(repository.listCompletedWorkspaceToolNames({
+      workspaceId: input.jobId,
+      userId,
+    })).resolves.toEqual([]);
+    await expect(repository.listPersistedAgentToolArtifacts({
+      workspaceId: input.jobId,
+      userId,
+      toolName: "analyze_argument",
+    })).resolves.toEqual([persistedArtifact]);
+
+    const snapshot = await repository.getOwnedSnapshot(userId, input.jobId);
+    expect(snapshot).toMatchObject({
+      status: "interrupted",
+      activeRun: {
+        id: run.id,
+        workspaceId: input.jobId,
+        status: "interrupted",
+        cancellationRequestedAt: now.toISOString(),
+      },
+      toolCalls: [{
+        id: toolCall.id,
+        agentRunId: run.id,
+        toolName: "analyze_argument",
+        status: "running",
+        summary: "正在核对核心主张。",
+        errorCode: null,
+        createdAt: now.toISOString(),
+        completedAt: null,
+      }],
+    });
+    expect(snapshot?.toolCalls[0]).not.toHaveProperty("rawPrompt");
+    expect(snapshot?.toolCalls[0]).not.toHaveProperty("rawOutput");
+  });
+
+  it("emits workspace events when a tool starts and finishes", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const run = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!run) throw new Error("Expected Agent run");
+    await repository.claimAgentRun({ workspaceId: input.jobId, userId, agentRunId: run.id, now });
+
+    const call = await repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      toolName: "analyze_argument",
+      summary: "正在核对核心主张。",
+      now,
+    });
+    if (!call || !("id" in call)) throw new Error("Expected tool call");
+    expect(await repository.listEvents(userId, input.jobId, 0, 20)).toContainEqual(
+      expect.objectContaining({
+        eventType: "agent.tool.updated",
+        payload: { agentRunId: run.id, toolCallId: call.id, status: "running" },
+      }),
+    );
+
+    await repository.finishAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      id: call.id,
+      status: "completed",
+      summary: "核心主张已核对。",
+      now,
+    });
+    expect(await repository.listEvents(userId, input.jobId, 0, 20)).toContainEqual(
+      expect.objectContaining({
+        eventType: "agent.tool.updated",
+        payload: { agentRunId: run.id, toolCallId: call.id, status: "completed" },
+      }),
+    );
+  });
+
+  it("releases a running challenge lease when its Agent run is cancelled", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    await seedPersistedRisk(input.reportId);
+    await repository.transitionJob(input.jobId, ["queued"], "completed", { now });
+    const challenge = await repository.createChallenge({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      content: "请重新核对。",
+      idempotencyKey: "cancel-leased-challenge",
+      now,
+    });
+    if (!challenge) throw new Error("Expected challenge");
+    const run = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "challenge",
+      messageId: challenge.messageId,
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!run) throw new Error("Expected challenge run");
+    await repository.claimAgentRun({ workspaceId: input.jobId, userId, agentRunId: run.id, now });
+    await repository.startRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId: "old-worker",
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+      now,
+    });
+
+    await repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      now: new Date(now.getTime() + 1),
+    });
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      activeRun: { status: "interrupted" },
+      messages: [expect.objectContaining({ id: challenge.messageId, status: "recoverable" })],
+    });
+    const resumed = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "challenge",
+      messageId: challenge.messageId,
+      configVersion: "agent-v1",
+      previousAgentRunId: run.id,
+      now: new Date(now.getTime() + 2),
+    });
+    if (!resumed) throw new Error("Expected resumed challenge run");
+    await repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: resumed.id,
+      now: new Date(now.getTime() + 2),
+    });
+    await expect(repository.startRevision({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      messageId: challenge.messageId,
+      leaseId: "new-worker",
+      leaseExpiresAt: new Date(now.getTime() + 30_000),
+      now: new Date(now.getTime() + 2),
+    })).resolves.toBe(true);
+  });
+
+  it("cancels a queued follow-on run in an interrupted workspace", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const firstRun = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!firstRun) throw new Error("Expected owned Agent run");
+    await repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: firstRun.id,
+      now,
+    });
+    const followOnRun = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      previousAgentRunId: firstRun.id,
+      now,
+    });
+    if (!followOnRun) throw new Error("Expected owned follow-on Agent run");
+
+    await expect(repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: followOnRun.id,
+      now,
+    })).resolves.toMatchObject({ eventId: expect.any(Number) });
+
+    const [cancelledRun] = await db
+      .select({ status: agentRuns.status })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, followOnRun.id));
+    expect(cancelledRun.status).toBe("interrupted");
+  });
+
+  it("rejects durability writes from a cancelled Agent run after resume", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const oldRun = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!oldRun) throw new Error("Expected original Agent run");
+    await repository.claimAgentRun({ workspaceId: input.jobId, userId, agentRunId: oldRun.id, now });
+    const oldToolCall = await repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: oldRun.id,
+      toolName: "analyze_risks",
+      summary: "旧运行正在分析风险。",
+      now,
+    });
+    if (!oldToolCall || !("id" in oldToolCall)) throw new Error("Expected original tool call");
+    await repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: oldRun.id,
+      now: new Date(now.getTime() + 1),
+    });
+    const resumedRun = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      previousAgentRunId: oldRun.id,
+      now: new Date(now.getTime() + 2),
+    });
+    if (!resumedRun) throw new Error("Expected resumed Agent run");
+    await repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: resumedRun.id,
+      now: new Date(now.getTime() + 2),
+    });
+
+    await repository.saveModule({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      agentRunId: oldRun.id,
+      moduleType: "risks",
+      status: "completed",
+      payload: {
+        items: [{
+          id: "late-risk",
+          type: "overgeneralization",
+          sourceMaterialQuote: "唯一选择。",
+          explanation: "旧运行不应写回。",
+          confidence: { score: 0.8, rationale: "旧运行已被取消" },
+        }],
+      },
+      expectedVersion: 0,
+      nextVersion: 1,
+      now: new Date(now.getTime() + 3),
+    });
+    await repository.saveSourcesModule({
+      jobId: input.jobId,
+      reportId: input.reportId,
+      userId,
+      agentRunId: oldRun.id,
+      moduleType: "sources",
+      status: "completed",
+      payload: { sources: [] },
+      expectedVersion: 0,
+      nextVersion: 1,
+      now: new Date(now.getTime() + 3),
+    });
+    await expect(repository.saveAgentToolArtifact({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: oldRun.id,
+      id: oldToolCall.id,
+      artifact: {
+        kind: "baseline_module",
+        moduleType: "risks",
+        outputVersion: 1,
+      },
+    })).resolves.toBe(false);
+
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      activeRun: { id: resumedRun.id, status: "running" },
+      modules: {
+        risks: { status: "queued", version: 0 },
+        sources: { status: "queued", version: 0 },
+      },
+    });
+  });
+
+  it("creates only one follow-on run for the latest interrupted run", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const interrupted = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!interrupted) throw new Error("Expected owned Agent run");
+    await repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: interrupted.id,
+      now,
+    });
+    const resumedAt = new Date(now.getTime() + 1);
+
+    const runs = await Promise.all([
+      repository.createAgentRun({
+        workspaceId: input.jobId,
+        userId,
+        kind: "baseline",
+        configVersion: "agent-v1",
+        previousAgentRunId: interrupted.id,
+        now: resumedAt,
+      }),
+      repository.createAgentRun({
+        workspaceId: input.jobId,
+        userId,
+        kind: "baseline",
+        configVersion: "agent-v1",
+        previousAgentRunId: interrupted.id,
+        now: resumedAt,
+      }),
+    ]);
+
+    expect(runs.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("keeps the follow-on run active when a stale cancellation loses to resume", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const recoverable = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!recoverable) throw new Error("Expected owned Agent run");
+    await repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: recoverable.id,
+      now,
+    });
+    await repository.finishAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: recoverable.id,
+      status: "recoverable",
+      now,
+    });
+    const resumed = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      previousAgentRunId: recoverable.id,
+      now: new Date(now.getTime() + 1),
+    });
+    if (!resumed) throw new Error("Expected follow-on Agent run");
+
+    await expect(repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: recoverable.id,
+      now: new Date(now.getTime() + 2),
+    })).resolves.toBeNull();
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      status: "recoverable",
+      activeRun: { id: resumed.id, status: "queued" },
+    });
+  });
+
+  it("claims and finishes an owned Agent run with compare-and-swap status checks", async () => {
+    const userId = await createUser();
+    const { input } = await createAnalysis(userId);
+    const run = await repository.createAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now,
+    });
+    if (!run) throw new Error("Expected owned Agent run");
+    const otherUserId = await createUser();
+
+    await expect(repository.requestAgentRunCancellation({
+      workspaceId: input.jobId,
+      userId: otherUserId,
+      agentRunId: run.id,
+      now,
+    })).resolves.toBeNull();
+
+    await expect(repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      triggerRunId: "trigger-run-1",
+      now,
+    })).resolves.toBe(true);
+    await expect(repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      triggerRunId: "trigger-run-2",
+      now,
+    })).resolves.toBe(false);
+
+    const toolCall = await repository.appendAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      toolName: "analyze_argument",
+      summary: "正在核对核心主张。",
+      now,
+    });
+    if (!toolCall || !("id" in toolCall)) throw new Error("Expected owned tool call");
+    await expect(repository.finishAgentToolCall({
+      workspaceId: input.jobId,
+      userId: otherUserId,
+      agentRunId: run.id,
+      id: toolCall.id,
+      status: "completed",
+      summary: "其他用户不能结束工具调用。",
+      now,
+    })).resolves.toBe(false);
+    await expect(repository.finishAgentToolCall({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      id: toolCall.id,
+      status: "completed",
+      summary: "已核对核心主张。",
+      now,
+    })).resolves.toBe(true);
+    await expect(repository.finishAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      status: "completed",
+      now,
+    })).resolves.toBe(true);
+    await expect(repository.claimAgentRun({
+      workspaceId: input.jobId,
+      userId,
+      agentRunId: run.id,
+      now,
+    })).resolves.toBe(false);
+
+    await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
+      status: "completed",
+      activeRun: {
+        id: run.id,
+        status: "completed",
+        startedAt: now.toISOString(),
+        completedAt: now.toISOString(),
+      },
+      toolCalls: [expect.objectContaining({
+        id: toolCall.id,
+        status: "completed",
+        summary: "已核对核心主张。",
+        completedAt: now.toISOString(),
+      })],
+    });
   });
 
   it("does not expose a saved challenge message to another user", async () => {
@@ -245,11 +829,13 @@ describe("PostgresAnalysisRepository", () => {
   it("atomically completes an Agent response without changing the report", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);
+    await seedPersistedRisk(input.reportId);
+    const target = { moduleType: "risks" as const, section: "items", itemId: "risk-1" };
     const challenge = await repository.createChallenge({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
-      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      target,
       content: "这个风险是否误读了原文？",
       idempotencyKey: "challenge-response-only",
       now,
@@ -272,6 +858,8 @@ describe("PostgresAnalysisRepository", () => {
       ...ownership,
       agentContent: "复核后无需修订。",
       expectedReportVersion: 0,
+      target,
+      expectedModuleVersion: 0,
     })).resolves.toBe(true);
 
     await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
@@ -287,11 +875,13 @@ describe("PostgresAnalysisRepository", () => {
   it("rejects a response-only completion when the reviewed report version is stale", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);
+    await seedPersistedRisk(input.reportId);
+    const target = { moduleType: "risks" as const, section: "items", itemId: "risk-1" };
     const challenge = await repository.createChallenge({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
-      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      target,
       content: "这个风险是否误读了原文？",
       idempotencyKey: "challenge-stale-response",
       now,
@@ -318,6 +908,8 @@ describe("PostgresAnalysisRepository", () => {
       ...ownership,
       agentContent: "基于旧报告的回答不应保存。",
       expectedReportVersion: 0,
+      target,
+      expectedModuleVersion: 0,
     })).resolves.toBe(false);
     await expect(repository.getOwnedSnapshot(userId, input.jobId)).resolves.toMatchObject({
       currentVersion: 1,
@@ -328,11 +920,13 @@ describe("PostgresAnalysisRepository", () => {
   it("serializes response-only CAS against an uncommitted report revision", async () => {
     const userId = await createUser();
     const { input } = await createAnalysis(userId);
+    await seedPersistedRisk(input.reportId);
+    const target = { moduleType: "risks" as const, section: "items", itemId: "risk-1" };
     const challenge = await repository.createChallenge({
       jobId: input.jobId,
       reportId: input.reportId,
       userId,
-      target: { moduleType: "risks", section: "items", itemId: "risk-1" },
+      target,
       content: "这个风险是否误读了原文？",
       idempotencyKey: "challenge-concurrent-response",
       now,
@@ -361,6 +955,8 @@ describe("PostgresAnalysisRepository", () => {
       leaseId,
       agentContent: "基于旧报告的回答不应保存。",
       expectedReportVersion: 0,
+      target,
+      expectedModuleVersion: 0,
       now,
     });
     await new Promise((resolve) => setTimeout(resolve, 20));

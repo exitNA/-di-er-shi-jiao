@@ -1,6 +1,5 @@
 export function isDevelopmentRuntime(source: NodeJS.ProcessEnv): boolean {
-  const cozeEnvironment = source.COZE_PROJECT_ENV?.toLowerCase();
-  return source.NODE_ENV !== "production" && cozeEnvironment !== "prod" && cozeEnvironment !== "production";
+  return source.NODE_ENV !== "production";
 }
 
 export function requestPath(url: string | undefined): string {

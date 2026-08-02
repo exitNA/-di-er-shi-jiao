@@ -1,5 +1,6 @@
 import type { AnalysisDispatcher } from "./analysis-dispatcher";
 import type { AnalysisRepository } from "./analysis-repository";
+import { resumeAgentRun } from "./resume-agent-run";
 
 const retryableModules = ["argument", "perspectives", "sources", "risks"] as const;
 
@@ -37,22 +38,20 @@ export async function retryAnalysisModule(
     return { ok: false, code: "JOB_NOT_RETRYABLE" };
   }
 
-  const acquired = await repository.transitionJob(
-    input.jobId,
-    ["partial", "recoverable"],
-    "running",
+  if (!snapshot.activeRun) return { ok: false, code: "JOB_NOT_RETRYABLE" };
+  const resumed = await resumeAgentRun(
+    {
+      userId: input.userId,
+      workspaceId: input.jobId,
+      agentRunId: snapshot.activeRun.id,
+    },
+    repository,
+    dispatcher,
   );
-  if (!acquired) return { ok: false, code: "JOB_NOT_RETRYABLE" };
-
-  try {
-    await dispatcher.enqueue({
-      jobId: input.jobId,
-      moduleType: input.moduleType,
-      dispatchKey: `${input.jobId}:${input.moduleType}:${failedModule.version + 1}`,
-    });
-  } catch {
-    await repository.transitionJob(input.jobId, ["running"], snapshot.status);
-    return { ok: false, code: "DISPATCH_FAILED" };
+  if (!resumed.ok) {
+    if (resumed.code === "DISPATCH_FAILED") return { ok: false, code: "DISPATCH_FAILED" };
+    if (resumed.code === "NOT_FOUND") return { ok: false, code: "NOT_FOUND" };
+    return { ok: false, code: "JOB_NOT_RETRYABLE" };
   }
 
   return { ok: true, jobId: input.jobId, moduleType: input.moduleType };

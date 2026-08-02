@@ -27,3 +27,19 @@ it("closes the account menu when clicking outside it", async () => {
 
   expect(screen.queryByRole("link", { name: "思考档案" })).not.toBeInTheDocument();
 });
+
+it("opens the account menu and reaches history with the keyboard", async () => {
+  const user = userEvent.setup();
+  render(<AppNavigation username="tester" />);
+
+  await user.tab();
+  await user.tab();
+  const accountMenu = screen.getByRole("button", { name: "打开账户菜单" });
+  expect(accountMenu).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await user.tab();
+
+  const history = screen.getByRole("link", { name: "思考档案" });
+  expect(history).toHaveFocus();
+  expect(history).toHaveAttribute("href", "/history");
+});

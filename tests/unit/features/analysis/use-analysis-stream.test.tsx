@@ -4,6 +4,7 @@ import type {
   AnalysisSnapshot,
   ReportModuleType,
 } from "@/features/analysis/domain/contracts";
+import type { WorkspaceAgentRun } from "@/features/analysis/domain/workspace";
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 
 class MockEventSource {
@@ -141,14 +142,27 @@ describe("useAnalysisStream", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  it("stops at recoverable jobs until the user starts a retry", () => {
+  it("keeps receiving updates for recoverable jobs", () => {
     const initial = snapshot({ status: "recoverable" });
     const { result } = renderHook(() =>
       useAnalysisStream("job-1", initial),
     );
 
-    expect(result.current.connectionState).toBe("closed");
-    expect(MockEventSource.instances).toHaveLength(0);
+    expect(result.current.connectionState).toBe("connecting");
+    expect(MockEventSource.instances).toHaveLength(1);
+  });
+
+  it("keeps receiving updates for a queued Agent run after the workspace is interrupted", () => {
+    const initial = snapshot({
+      status: "interrupted",
+      activeRun: agentRun("queued"),
+    });
+    const { result } = renderHook(() =>
+      useAnalysisStream("job-1", initial),
+    );
+
+    expect(result.current.connectionState).toBe("connecting");
+    expect(MockEventSource.instances).toHaveLength(1);
   });
 
   it("does not reschedule an in-flight poll after SSE reconnects", async () => {
@@ -207,13 +221,19 @@ function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
-    jobId: "job-1",
+    workspaceId: "job-1",
+    reportId: "report-1",
+    currentVersion: 0,
     status: "running",
     configVersion: "baseline-v1",
     materialPreview: "材料",
     createdAt: "2026-07-30T00:00:00.000Z",
     updatedAt: "2026-07-30T00:00:00.000Z",
     lastEventId: 0,
+    activeRun: null,
+    toolCalls: [],
+    messages: [],
+    revisions: [],
     modules: emptyModules(),
     ...overrides,
   };
@@ -235,4 +255,17 @@ function emptyModules(): AnalysisSnapshot["modules"] {
       { status: "queued" as const, version: 0 },
     ]),
   ) as AnalysisSnapshot["modules"];
+}
+
+function agentRun(status: WorkspaceAgentRun["status"]): WorkspaceAgentRun {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    workspaceId: "job-1",
+    kind: "baseline",
+    status,
+    configVersion: "agent-v1",
+    cancellationRequestedAt: null,
+    startedAt: null,
+    completedAt: null,
+  };
 }

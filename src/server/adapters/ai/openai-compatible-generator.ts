@@ -19,6 +19,19 @@ export type GeneratorErrorCode =
   | "LLM_SCHEMA_INVALID"
   | "LLM_UNKNOWN_ERROR";
 
+export function createOpenAICompatibleLanguageModel(
+  config: OpenAICompatibleGeneratorConfig,
+) {
+  const provider = createOpenAICompatible({
+    name: "secondPerspective",
+    apiKey: config.apiKey,
+    baseURL: config.baseURL.replace(/\/$/, ""),
+    supportsStructuredOutputs: true,
+    fetch: config.fetch,
+  });
+  return provider(config.modelId);
+}
+
 export class GeneratorError extends Error {
   constructor(
     public readonly code: GeneratorErrorCode,
@@ -30,16 +43,10 @@ export class GeneratorError extends Error {
 }
 
 export class OpenAICompatibleGenerator implements StructuredGenerator {
-  private readonly provider;
+  private readonly model;
 
-  constructor(private readonly config: OpenAICompatibleGeneratorConfig) {
-    this.provider = createOpenAICompatible({
-      name: "secondPerspective",
-      apiKey: config.apiKey,
-      baseURL: config.baseURL.replace(/\/$/, ""),
-      supportsStructuredOutputs: true,
-      fetch: config.fetch,
-    });
+  constructor(config: OpenAICompatibleGeneratorConfig) {
+    this.model = createOpenAICompatibleLanguageModel(config);
   }
 
   async generate<T>(input: StructuredGenerationInput<T>): Promise<{
@@ -70,7 +77,7 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
   }> {
     const startedAt = performance.now();
     const result = await generateText({
-      model: this.provider(this.config.modelId),
+      model: this.model,
       system: retrying
         ? `${input.system}\n\nThe previous response violated the requested schema. Return only valid JSON matching it.`
         : input.system,

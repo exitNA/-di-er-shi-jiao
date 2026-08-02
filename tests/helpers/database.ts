@@ -19,12 +19,20 @@ const applicationTables = [
   "product_events",
 ].map((table) => `\"${table}\"`);
 
-function testDatabaseUrl(): string {
-  const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-  if (!testDatabaseUrl) {
-    throw new Error("TEST_DATABASE_URL is required");
+export function testDatabaseUrl(): string {
+  const value = process.env.DATABASE_URL;
+  if (!value) {
+    throw new Error("DATABASE_URL is required");
   }
-  return testDatabaseUrl;
+  assertTestDatabaseUrl(value);
+  return value;
+}
+
+function assertTestDatabaseUrl(connectionString: string): void {
+  const databaseName = new URL(connectionString).pathname.slice(1);
+  if (!databaseName.endsWith("_test")) {
+    throw new Error("Refusing to truncate a non-test database");
+  }
 }
 
 export function createTestDb(): AppDb {
@@ -43,11 +51,11 @@ export async function migrateTestDb(): Promise<void> {
 }
 
 export async function truncateTestDb(): Promise<void> {
-  const connectionString = testDatabaseUrl();
-  const databaseName = new URL(connectionString).pathname.slice(1);
-  if (!databaseName.endsWith("_test")) {
-    throw new Error("Refusing to truncate a non-test database");
-  }
+  await truncateTestDbFor(testDatabaseUrl());
+}
+
+export async function truncateTestDbFor(connectionString: string): Promise<void> {
+  assertTestDatabaseUrl(connectionString);
 
   const pool = new Pool({ connectionString });
   try {

@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostgresAnalysisRepository } from "@/features/analysis/server/postgres-analysis-repository";
 import { submitAnalysis } from "@/features/analysis/server/submit-analysis";
-import { analysisJobs } from "@/server/db/schema/analysis";
+import { analysisJobs, expertRuns } from "@/server/db/schema/analysis";
 import { users } from "@/server/db/schema/auth";
 import {
   createTestDb,
@@ -52,9 +52,62 @@ describe("concurrent analysis submission", () => {
     expect(results.filter((result) => result.ok && result.created)).toHaveLength(1);
     expect(jobs).toHaveLength(1);
     expect(enqueue).toHaveBeenCalledTimes(1);
-    expect(enqueue).toHaveBeenCalledWith({
-      jobId: jobs[0].id,
-      dispatchKey: `${jobs[0].id}:baseline`,
+    const dispatched = enqueue.mock.calls[0][0];
+    expect(dispatched).toEqual({
+      workspaceId: jobs[0].id,
+      agentRunId: expect.any(String),
+      dispatchKey: `${jobs[0].id}:${dispatched.agentRunId}`,
     });
+  });
+
+  it("allocates monotonic expert attempts when retries start concurrently", async () => {
+    const now = new Date("2026-08-02T00:00:00.000Z");
+    const userId = randomUUID();
+    const workspaceId = randomUUID();
+    await db.insert(users).values({
+      id: userId,
+      username: "concurrent_expert",
+      normalizedUsername: "concurrent_expert",
+      createdAt: now,
+    });
+    await repository.createAnalysis({
+      jobId: workspaceId,
+      materialId: randomUUID(),
+      reportId: randomUUID(),
+      userId,
+      content: "恢复运行应保留每一次专家尝试。",
+      detectedLanguage: "zh",
+      idempotencyKey: randomUUID(),
+      configVersion: "agent-v1",
+      now,
+    });
+
+    await Promise.all([
+      repository.startExpertRun({
+        id: randomUUID(),
+        jobId: workspaceId,
+        expertType: "sources",
+        phase: "baseline",
+        attempt: 1,
+        configVersion: "agent-v1",
+        now,
+      }),
+      repository.startExpertRun({
+        id: randomUUID(),
+        jobId: workspaceId,
+        expertType: "sources",
+        phase: "baseline",
+        attempt: 1,
+        configVersion: "agent-v1",
+        now,
+      }),
+    ]);
+
+    const attempts = await db
+      .select({ attempt: expertRuns.attempt })
+      .from(expertRuns)
+      .where(eq(expertRuns.jobId, workspaceId))
+      .orderBy(asc(expertRuns.attempt));
+    expect(attempts).toEqual([{ attempt: 1 }, { attempt: 2 }]);
   });
 });

@@ -1,8 +1,10 @@
 import { createServer } from 'http';
 import { getLogger } from '@logtape/logtape';
 import next from 'next';
+import { loadServerEnv } from './server/config/env';
 import { isDevelopmentRuntime, requestPath, shouldLogAccess } from './server/runtime';
 
+loadServerEnv();
 const dev = isDevelopmentRuntime(process.env);
 const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT || '5000', 10);
@@ -63,7 +65,7 @@ app.prepare().then(() => {
       }
     }
 
-    logger.info('Server listening', { hostname, port, environment: dev ? 'development' : process.env.COZE_PROJECT_ENV });
+    logger.info('Server listening', { hostname, port, environment: process.env.NODE_ENV ?? 'development' });
     const databaseSummary = database.configured
       ? database.valid
         ? `${database.protocol}//${database.username}:${database.password}@${database.host}${database.port ? `:${database.port}` : ''}/${database.name}${database.sslMode ? ` (sslmode=${database.sslMode})` : ''}`
@@ -71,8 +73,7 @@ app.prepare().then(() => {
       : 'not configured';
     logger.info('Startup config:');
     logger.info('  env={value}', { value: process.env.NODE_ENV ?? 'development' });
-    logger.info('  coze={value}', { value: process.env.COZE_PROJECT_ENV ?? 'development' });
-    logger.info('  agent={value}', { value: process.env.AGENT_ADAPTER ?? 'fake' });
+    logger.info('  agent={value}', { value: process.env.AGENT_ADAPTER ?? 'unset' });
     logger.info('  runtime={value}', { value: process.env.ANALYSIS_RUNTIME ?? 'in-process' });
     logger.info('  database={value}', { value: databaseSummary });
     logger.info('  auth={value}', { value: Boolean(process.env.AUTH_SECRET) });

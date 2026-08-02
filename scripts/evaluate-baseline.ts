@@ -81,16 +81,15 @@ async function main(): Promise<void> {
 
 function createRealExpertSuite(): ExpertSuite {
   const env = loadServerEnv();
-  if (env.AGENT_ADAPTER !== "openai-compatible") {
-    throw new Error("eval:run requires AGENT_ADAPTER=openai-compatible");
-  }
   return new AiExpertSuite({
     generator: new OpenAICompatibleGenerator({
-      baseURL: env.LLM_BASE_URL!,
-      apiKey: env.LLM_API_KEY!,
-      modelId: env.LLM_MODEL_ID!,
+      baseURL: env.LLM_BASE_URL,
+      apiKey: env.LLM_API_KEY,
+      modelId: env.LLM_MODEL_ID,
     }),
-    searchClient: new TavilySearchClient({ apiKey: env.TAVILY_API_KEY! }),
+    ...(env.TAVILY_API_KEY
+      ? { searchClient: new TavilySearchClient({ apiKey: env.TAVILY_API_KEY }) }
+      : {}),
   });
 }
 

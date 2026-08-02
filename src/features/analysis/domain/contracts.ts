@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AnalysisJobStatus, ReportModuleStatus } from "./job-state";
+import type { WorkspaceAgentRun, WorkspaceToolCall } from "./workspace";
 
 export const originSchema = z.enum([
   "source_material",
@@ -212,7 +213,7 @@ export type ReportRevisionChange = z.infer<typeof reportRevisionChangeSchema>;
 export type ReportRevision = z.infer<typeof reportRevisionSchema>;
 
 export type AnalysisSnapshot = {
-  jobId: string;
+  workspaceId: string;
   reportId: string;
   currentVersion: number;
   status: AnalysisJobStatus;
@@ -221,6 +222,8 @@ export type AnalysisSnapshot = {
   createdAt: string;
   updatedAt: string;
   lastEventId: number;
+  activeRun: WorkspaceAgentRun | null;
+  toolCalls: WorkspaceToolCall[];
   messages: ConversationMessage[];
   revisions: ReportRevision[];
   modules: Record<

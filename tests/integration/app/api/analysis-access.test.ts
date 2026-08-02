@@ -3,7 +3,6 @@ import type {
   AnalysisSnapshot,
   ReportModuleType,
 } from "@/features/analysis/domain/contracts";
-import { BaselineOrchestrator } from "@/server/agents/baseline-orchestrator";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -27,8 +26,12 @@ import { POST as retryModule } from "@/app/api/analyses/[jobId]/modules/[moduleT
 
 describe("analysis access routes", () => {
   const repository = {
+    claimAgentRun: vi.fn(),
+    createAgentRun: vi.fn(),
+    finishAgentRun: vi.fn(),
     getOwnedSnapshot: vi.fn(),
     listEvents: vi.fn(),
+    requestAgentRunCancellation: vi.fn(),
     transitionJob: vi.fn(),
   };
   const dispatcher = { enqueue: vi.fn() };
@@ -46,6 +49,7 @@ describe("analysis access routes", () => {
     repository.getOwnedSnapshot.mockResolvedValue(snapshot());
     repository.listEvents.mockResolvedValue([]);
     repository.transitionJob.mockResolvedValue(true);
+    repository.createAgentRun.mockResolvedValue({ id: "agent-run-2" });
     dispatcher.enqueue.mockResolvedValue({ runId: "run-1" });
   });
 
@@ -53,15 +57,26 @@ describe("analysis access routes", () => {
     vi.useRealTimers();
   });
 
-  it("returns 404 rather than revealing another user's job", async () => {
+  it("returns 404 for another user's snapshot, events, and retry", async () => {
     repository.getOwnedSnapshot.mockResolvedValue(null);
 
-    const response = await getSnapshot(
-      new Request("http://localhost/api/analyses/not-owned"),
-      context({ jobId: "not-owned" }),
-    );
+    const [snapshotResponse, eventsResponse, retryResponse] = await Promise.all([
+      getSnapshot(
+        new Request("http://localhost/api/analyses/not-owned"),
+        context({ jobId: "not-owned" }),
+      ),
+      getEvents(
+        new Request("http://localhost/api/analyses/not-owned/events"),
+        context({ jobId: "not-owned" }),
+      ),
+      retryModule(
+        retryRequest("sources", "not-owned"),
+        retryContext("sources", "not-owned"),
+      ),
+    ]);
 
-    expect(response.status).toBe(404);
+    expect([snapshotResponse.status, eventsResponse.status, retryResponse.status])
+      .toEqual([404, 404, 404]);
     expect(repository.getOwnedSnapshot).toHaveBeenCalledWith(
       "owner-1",
       "not-owned",
@@ -135,6 +150,7 @@ describe("analysis access routes", () => {
         version: 2,
         errorCode: "EXPERT_FAILED",
       };
+      current.activeRun = agentRun("recoverable");
       repository.getOwnedSnapshot.mockResolvedValue(current);
 
       const response = await retryModule(
@@ -144,9 +160,9 @@ describe("analysis access routes", () => {
 
       expect(response.status).toBe(202);
       expect(dispatcher.enqueue).toHaveBeenCalledWith({
-        jobId: "job-1",
-        moduleType,
-        dispatchKey: `job-1:${moduleType}:3`,
+        workspaceId: "job-1",
+        agentRunId: "agent-run-2",
+        dispatchKey: "job-1:agent-run-2",
       });
     },
   );
@@ -164,43 +180,11 @@ describe("analysis access routes", () => {
     },
   );
 
-  it("lets a module worker consume a retry lock acquired by the route", async () => {
-    const marker = new Error("past acquisition");
-    const orchestratorRepository = {
-      getJobForExecution: vi.fn().mockResolvedValue({
-        jobId: "job-1",
-        userId: "owner-1",
-        reportId: "report-1",
-        material: "材料",
-        detectedLanguage: "zh",
-        status: "running",
-        configVersion: "baseline-v1",
-      }),
-      getOwnedSnapshot: vi.fn().mockResolvedValue(snapshot({
-        status: "running",
-        modules: {
-          ...emptyModules(),
-          sources: { status: "failed", version: 1 },
-        },
-      })),
-      transitionJob: vi.fn(),
-      appendEvent: vi.fn().mockRejectedValue(marker),
-    };
-    const orchestrator = new BaselineOrchestrator(
-      {} as never,
-      orchestratorRepository as never,
-    );
-
-    await expect(
-      orchestrator.run({ jobId: "job-1", onlyModule: "sources" }),
-    ).rejects.toBe(marker);
-    expect(orchestratorRepository.transitionJob).not.toHaveBeenCalled();
-  });
 });
 
-function retryRequest(moduleType: string) {
+function retryRequest(moduleType: string, jobId = "job-1") {
   return new Request(
-    `http://localhost/api/analyses/job-1/modules/${moduleType}/retry`,
+    `http://localhost/api/analyses/${jobId}/modules/${moduleType}/retry`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -209,8 +193,21 @@ function retryRequest(moduleType: string) {
   );
 }
 
-function retryContext(moduleType: string) {
-  return context({ jobId: "job-1", moduleType });
+function agentRun(status: "interrupted" | "recoverable"): NonNullable<AnalysisSnapshot["activeRun"]> {
+  return {
+    id: "agent-run-1",
+    workspaceId: "job-1",
+    kind: "baseline",
+    status,
+    configVersion: "agent-v1",
+    cancellationRequestedAt: null,
+    startedAt: "2026-07-30T00:00:00.000Z",
+    completedAt: "2026-07-30T00:01:00.000Z",
+  };
+}
+
+function retryContext(moduleType: string, jobId = "job-1") {
+  return context({ jobId, moduleType });
 }
 
 function context<T extends Record<string, string>>(params: T) {
@@ -221,13 +218,19 @@ function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
-    jobId: "job-1",
+    workspaceId: "job-1",
+    reportId: "report-1",
+    currentVersion: 0,
     status: "running",
     configVersion: "baseline-v1",
     materialPreview: "材料",
     createdAt: "2026-07-30T00:00:00.000Z",
     updatedAt: "2026-07-30T00:00:00.000Z",
     lastEventId: 0,
+    activeRun: null,
+    toolCalls: [],
+    messages: [],
+    revisions: [],
     modules: emptyModules(),
     ...overrides,
   };

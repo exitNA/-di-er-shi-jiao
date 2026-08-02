@@ -22,7 +22,9 @@ import {
 } from "@/features/analysis/domain/contracts";
 import { useAnalysisStream } from "@/features/analysis/hooks/use-analysis-stream";
 import { ConversationPanel } from "@/features/conversation/components/conversation-panel";
+import { RevisionHistory } from "@/features/conversation/components/revision-history";
 import { AgentWorkspaceLayout } from "./agent-workspace-layout";
+import { AgentRunStatus } from "./agent-run-status";
 import { CurrentFindingsPanel, firstAvailableFindingTarget } from "./current-findings-panel";
 
 const disclaimer =
@@ -33,16 +35,16 @@ export function AnalysisWorkspace({
 }: {
   initialSnapshot: AnalysisSnapshot;
 }) {
-  const { snapshot, retryModule, refreshSnapshot } =
-    useAnalysisStream(initialSnapshot.jobId, initialSnapshot);
+  const { snapshot, retryModule, applySnapshot, refreshSnapshot } =
+    useAnalysisStream(initialSnapshot.workspaceId, initialSnapshot);
   const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
-  const firstModuleEventJobId = useRef<string | null>(null);
+  const firstModuleEventWorkspaceId = useRef<string | null>(null);
   useEffect(() => {
     const moduleType = moduleTypes.find(
       (candidate) => snapshot.modules[candidate].status === "completed",
     );
-    if (!moduleType || firstModuleEventJobId.current === snapshot.jobId) return;
-    firstModuleEventJobId.current = snapshot.jobId;
+    if (!moduleType || firstModuleEventWorkspaceId.current === snapshot.workspaceId) return;
+    firstModuleEventWorkspaceId.current = snapshot.workspaceId;
     void fetch(
       "/api/product-events",
       {
@@ -50,13 +52,13 @@ export function AnalysisWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventName: "first_module_shown",
-          jobId: snapshot.jobId,
+          jobId: snapshot.workspaceId,
           moduleType,
         }),
         keepalive: true,
       },
     ).catch(() => {});
-  }, [snapshot.jobId, snapshot.modules]);
+  }, [snapshot.workspaceId, snapshot.modules]);
   useEffect(() => {
     if (selectedTarget) return;
     const target = firstAvailableFindingTarget(snapshot.modules);
@@ -71,8 +73,8 @@ export function AnalysisWorkspace({
   return (
     <main className="h-[calc(100dvh-4.5rem)] overflow-hidden">
       <AgentWorkspaceLayout
-          conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><ConversationPanel jobId={snapshot.jobId} messages={snapshot.messages} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
-          findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="hidden" aria-labelledby="legacy-findings-heading"><div className="space-y-4">
+          conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><AgentRunStatus workspaceId={snapshot.workspaceId} activeRun={snapshot.activeRun} toolCalls={snapshot.toolCalls} onSnapshot={applySnapshot} onRefresh={refreshSnapshot} /><ConversationPanel jobId={snapshot.workspaceId} messages={snapshot.messages} activeRun={snapshot.activeRun} selectedTarget={selectedTarget} onRefresh={refreshSnapshot} /></div></div>}
+          findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="mt-8" aria-label="完整报告"><div className="space-y-4">
           <ReportModule
             id="report-module-overview"
             moduleType="overview"
@@ -147,6 +149,7 @@ export function AnalysisWorkspace({
               />
             ) : undefined}
           </ReportModule>
+          <RevisionHistory revisions={snapshot.revisions} modules={snapshot.modules} />
           <p className="rounded-xl bg-forest-soft px-4 py-3 text-xs leading-5 text-ink-faint">{disclaimer}</p></div></section></>}
       />
     </main>

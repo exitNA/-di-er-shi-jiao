@@ -9,6 +9,7 @@ import type {
 } from "@/features/analysis/domain/contracts";
 
 const mocks = vi.hoisted(() => ({
+  applySnapshot: vi.fn(),
   retryModule: vi.fn().mockResolvedValue(undefined),
   refreshSnapshot: vi.fn().mockResolvedValue(undefined),
 }));
@@ -18,6 +19,7 @@ vi.mock("@/features/analysis/hooks/use-analysis-stream", () => ({
     snapshot: initialSnapshot,
     connectionState: initialSnapshot.status === "completed" ? "closed" : "connected",
     retryModule: mocks.retryModule,
+    applySnapshot: mocks.applySnapshot,
     refreshSnapshot: mocks.refreshSnapshot,
   }),
 }));
@@ -45,12 +47,35 @@ it("presents an agent workspace with current findings", () => {
 it("enables the composer when findings are available", async () => {
   render(<AnalysisWorkspace initialSnapshot={completedRiskSnapshot()} />);
 
+  expect(screen.getByRole("region", { name: "完整报告" })).toBeVisible();
   const composer = screen.getByRole("textbox", { name: "继续追问" });
   expect(composer).toBeEnabled();
   await userEvent.type(composer, "请核对这个结论。");
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "发送追问" })).toBeEnabled(),
   );
+});
+
+it("prevents new questions until an interrupted baseline run is resumed", () => {
+  const current = completedRiskSnapshot();
+  const { rerender } = render(
+    <AnalysisWorkspace
+      initialSnapshot={{ ...current, activeRun: agentRun("running") }}
+    />,
+  );
+
+  const composer = screen.getByRole("textbox", { name: "继续追问" });
+  expect(composer).toBeDisabled();
+  expect(screen.getByText("正在处理此工作空间")).toBeVisible();
+
+  rerender(
+    <AnalysisWorkspace
+      initialSnapshot={{ ...current, activeRun: agentRun("interrupted") }}
+    />,
+  );
+
+  expect(composer).toBeDisabled();
+  expect(screen.getByRole("button", { name: "继续分析" })).toBeEnabled();
 });
 
 it("shows the source failure and retries that module", async () => {
@@ -300,7 +325,7 @@ function snapshot(
   overrides: Partial<AnalysisSnapshot> = {},
 ): AnalysisSnapshot {
   return {
-    jobId: "job-1",
+    workspaceId: "job-1",
     reportId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     currentVersion: 0,
     status: "running",
@@ -309,6 +334,8 @@ function snapshot(
     createdAt: "2026-07-30T00:00:00.000Z",
     updatedAt: "2026-07-30T00:00:00.000Z",
     lastEventId: 0,
+    activeRun: null,
+    toolCalls: [],
     messages: [],
     revisions: [],
     modules: emptyModules(),
@@ -338,6 +365,21 @@ function completedRiskSnapshot(): AnalysisSnapshot {
       },
     },
   });
+}
+
+function agentRun(
+  status: NonNullable<AnalysisSnapshot["activeRun"]>["status"],
+): NonNullable<AnalysisSnapshot["activeRun"]> {
+  return {
+    id: "22222222-2222-4222-8222-222222222222",
+    workspaceId: "job-1",
+    kind: "baseline",
+    status,
+    configVersion: "agent-v1",
+    cancellationRequestedAt: status === "interrupted" ? "2026-08-02T00:00:00.000Z" : null,
+    startedAt: "2026-08-02T00:00:00.000Z",
+    completedAt: null,
+  };
 }
 
 function emptyModules(): AnalysisSnapshot["modules"] {

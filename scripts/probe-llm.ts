@@ -5,10 +5,6 @@ import { loadServerEnv } from "../src/server/config/env";
 
 export async function runLlmProbe() {
   const env = loadServerEnv();
-  if (!env.LLM_BASE_URL || !env.LLM_API_KEY || !env.LLM_MODEL_ID) {
-    throw new Error("LLM_BASE_URL, LLM_API_KEY, and LLM_MODEL_ID are required");
-  }
-
   const provider = createOpenAICompatible({
     name: "secondPerspective",
     apiKey: env.LLM_API_KEY,

@@ -27,9 +27,9 @@ describe("challenge route access", () => {
     submitChallenge.mockResolvedValue({
       ok: true,
       messageId: "22222222-2222-4222-8222-222222222222",
-      revisionId: "33333333-3333-4333-8333-333333333333",
+      agentRunId: "33333333-3333-4333-8333-333333333333",
       created: true,
-      status: "completed",
+      status: "queued",
     });
   });
 
@@ -37,7 +37,7 @@ describe("challenge route access", () => {
     const response = await POST(request(), context());
 
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({ status: "completed" });
+    expect(await response.json()).toMatchObject({ status: "queued" });
     expect(submitChallenge).toHaveBeenCalledWith({
       userId: "owner-1",
       jobId,
@@ -61,6 +61,14 @@ describe("challenge route access", () => {
     const response = await POST(request(), context());
 
     expect(response.status).toBe(400);
+  });
+
+  it("returns 409 while another Agent run is active", async () => {
+    submitChallenge.mockResolvedValue({ ok: false, code: "RUN_BUSY" });
+
+    const response = await POST(request(), context());
+
+    expect(response.status).toBe(409);
   });
 
   it("rejects a body jobId instead of letting it override the pathname", async () => {

@@ -1,10 +1,10 @@
+import { z } from "zod";
 import type {
   ArgumentModule,
   BaselineDraft,
   OverviewModule,
   PerspectivesModule,
   ReflectionModule,
-  ReportModuleType,
   RisksModule,
   SourcesModule,
 } from "@/features/analysis/domain/contracts";
@@ -13,6 +13,11 @@ import type {
   TargetedReview,
   TargetedReviewInput,
 } from "@/features/conversation/domain/contracts";
+import { workspaceDraftReviewSchema } from "@/features/analysis/domain/workspace";
+import {
+  overviewModuleSchema,
+  reflectionModuleSchema,
+} from "@/features/analysis/domain/contracts";
 
 export type ExpertInput = {
   material: string;
@@ -24,14 +29,14 @@ export type ExpertOutputs = Pick<BaselineDraft, "argument" | "perspectives" | "s
 
 export type SynthesisInput = ExpertInput & ExpertOutputs;
 
-export type DraftReview = {
-  findings: Array<{
-    moduleType: ReportModuleType;
-    statementId?: string;
-    problem: string;
-    requiredChange: string;
-  }>;
-};
+export const draftReviewSchema = workspaceDraftReviewSchema;
+
+export const synthesisOutputSchema = z.object({
+  overview: overviewModuleSchema,
+  reflection: reflectionModuleSchema,
+});
+
+export type DraftReview = z.infer<typeof draftReviewSchema>;
 
 export type DraftReviewInput = ExpertInput & { draft: BaselineDraft };
 

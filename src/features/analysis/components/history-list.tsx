@@ -6,6 +6,7 @@ const statusLabels: Record<HistoryItem["status"], string> = {
   queued: "等待",
   running: "分析中",
   partial: "部分完成",
+  interrupted: "已中止",
   completed: "已完成",
   recoverable: "待恢复",
 };

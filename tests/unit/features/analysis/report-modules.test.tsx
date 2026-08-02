@@ -67,6 +67,10 @@ it("renders source relation metadata without a truth badge", () => {
   expect(screen.getByText("research.example")).toBeInTheDocument();
   expect(screen.getByText("质量层级：2")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "原始研究" })).toHaveAttribute(
+    "href",
+    "https://research.example/report",
+  );
+  expect(screen.getByRole("link", { name: "原始研究" })).toHaveAttribute(
     "target",
     "_blank",
   );

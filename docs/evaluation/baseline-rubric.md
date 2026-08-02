@@ -8,7 +8,7 @@
 pnpm eval:run
 ```
 
-脚本按固定顺序处理 30 个样本，样本并发数为 `1`；单份报告内的专家调用保持与产品基线流程一致。结果写入
+脚本串行处理 30 个样本；单份报告由当前 Agent 运行时决定工具调用。结果写入
 `tmp/evaluations/baseline-v1/<timestamp>/`，包括 `reports.jsonl`、`metrics.json` 和两份互相独立的评审表。
 `tmp/evaluations/latest.json` 指向最近一次完整产物目录。产物不保存密钥或完整模型调用轨迹。
 
@@ -30,7 +30,7 @@ pnpm eval:score [run-directory] --adjudication path/to/adjudication.csv
 
 | 列 | 格式 | 定义 |
 | --- | --- | --- |
-| `structure_complete` | `pass` / `fail` | 六个模块均存在、可读，并承担各自职责。信源失败时，明确写出降级和证据缺口的 `sources` 模块仍可用。占位文本、错误对象或缺少任一模块为 `fail`。 |
+| `structure_complete` | `pass` / `fail` | 六个模块均存在、可读，并承担各自职责。未配置在线搜索时，`sources` 可不含外部来源；占位文本、错误对象或缺少任一模块为 `fail`。 |
 | `citation_url_valid` | `可达数/引用总数` | 对每个去重 HTTPS 引用实际打开验证。返回可访问内容或正常重定向且能识别所引来源计为可达；登录墙、404、超时、域名停放或链接到无关内容不计。无引用填 `0/0`。 |
 | `citation_support` | `支持数/已审关系数` | 逐条核对报告声明的 claim-source relation。来源内容确实支持、反驳或证明证据不足，并且强度不弱于报告表述时计为支持；只相关但不能推出主张不计。无关系填 `0/0`。 |
 | `high_confidence_risks_correct` | 非负整数 | `confidence.score >= 0.8` 的风险中，类型正确、原文引句可定位且解释成立的数量。 |
@@ -51,7 +51,7 @@ pnpm eval:score [run-directory] --adjudication path/to/adjudication.csv
 | 引用支持率 | 获得评审支持的关系数 / 已审关系数 | `>= 85%` |
 | 高置信风险精确率 | 正确高置信风险数 / 高置信风险总数 | `>= 80%` |
 | 中立性通过率 | 双评审一致通过或裁决通过的报告数 / 已审报告数 | `>= 85%` |
-| 报告成功率 | 可用报告数（含明确的信源降级）/ 报告总数 | `>= 90%` |
+| 报告成功率 | 可用报告数 / 报告总数 | `>= 90%` |
 | 首模块 P95 | 首个可用模块延迟的 nearest-rank P95 | `<= 10,000 ms` |
 | 基线 P95 | 完整基线流程延迟的 nearest-rank P95 | `<= 60,000 ms` |
 

@@ -53,28 +53,66 @@ export async function submitAnalysis(
       logger.error("Product event recording failed", { jobId: created.jobId, errorCode: "PRODUCT_EVENT_FAILED" });
     }
 
+    const agentRun = await repository.createAgentRun({
+      workspaceId: created.jobId,
+      userId: input.userId,
+      kind: "baseline",
+      configVersion: "agent-v1",
+      now: now(),
+    });
     try {
-      await dispatcher.enqueue({ jobId: created.jobId, dispatchKey: `${created.jobId}:baseline` });
+      if (!agentRun) throw new Error("Agent run workspace unavailable");
+      await dispatcher.enqueue({
+        workspaceId: created.jobId,
+        agentRunId: agentRun.id,
+        dispatchKey: `${created.jobId}:${agentRun.id}`,
+      });
     } catch {
-      const transitioned = await repository.transitionJob(
-        created.jobId,
-        ["queued"],
-        "recoverable",
-        { failureCode: "DISPATCH_FAILED", now: now() },
-      );
-      if (transitioned) {
-        await repository.appendEvent({
-          jobId: created.jobId,
-          userId: input.userId,
-          eventType: "job.recoverable",
-          payload: { errorCode: "DISPATCH_FAILED" },
-          now: now(),
-        });
-      }
+      const recovered = agentRun
+        ? await recoverDispatchFailure(created.jobId, input.userId, agentRun.id, repository, now)
+        : await repository.transitionJob(
+            created.jobId,
+            ["queued"],
+            "recoverable",
+            { failureCode: "DISPATCH_FAILED", now: now() },
+          );
+      if (recovered) await appendDispatchFailureEvent(created.jobId, input.userId, repository, now);
     }
   }
 
   return { ok: true, jobId: created.jobId, created: created.created };
+}
+
+async function recoverDispatchFailure(
+  workspaceId: string,
+  userId: string,
+  agentRunId: string,
+  repository: AnalysisRepository,
+  now: () => Date,
+): Promise<boolean> {
+  const claimed = await repository.claimAgentRun({ workspaceId, userId, agentRunId, now: now() });
+  return claimed && repository.finishAgentRun({
+    workspaceId,
+    userId,
+    agentRunId,
+    status: "recoverable",
+    now: now(),
+  });
+}
+
+async function appendDispatchFailureEvent(
+  jobId: string,
+  userId: string,
+  repository: AnalysisRepository,
+  now: () => Date,
+): Promise<void> {
+  await repository.appendEvent({
+    jobId,
+    userId,
+    eventType: "job.recoverable",
+    payload: { errorCode: "DISPATCH_FAILED" },
+    now: now(),
+  });
 }
 
 function detectLanguage(content: string): "zh" | "en" | "mixed" {

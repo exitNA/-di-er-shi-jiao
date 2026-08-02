@@ -2,9 +2,7 @@ import { expect, it } from "vitest";
 
 import { isDevelopmentRuntime, requestPath, shouldLogAccess } from "@/server/runtime";
 
-it("treats Coze production values as production", () => {
-  expect(isDevelopmentRuntime({ COZE_PROJECT_ENV: "PROD" })).toBe(false);
-  expect(isDevelopmentRuntime({ COZE_PROJECT_ENV: "production" })).toBe(false);
+it("uses NODE_ENV as the only production-mode signal", () => {
   expect(isDevelopmentRuntime({ NODE_ENV: "production" })).toBe(false);
   expect(isDevelopmentRuntime({ NODE_ENV: "development" })).toBe(true);
 });

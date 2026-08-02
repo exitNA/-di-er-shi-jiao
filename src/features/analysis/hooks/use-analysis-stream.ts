@@ -18,7 +18,7 @@ type RetryableModuleType = Exclude<
 >;
 
 export function useAnalysisStream(
-  jobId: string,
+  workspaceId: string,
   initialSnapshot: AnalysisSnapshot,
 ) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
@@ -43,7 +43,7 @@ export function useAnalysisStream(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- a new job needs its server snapshot before subscribing.
     setSnapshot(initialSnapshot);
     lastCursor.current = initialSnapshot.lastEventId;
-  }, [jobId, initialSnapshot]);
+  }, [workspaceId, initialSnapshot]);
 
   const request = useCallback(async (url: string, init?: RequestInit) => {
     const controller = new AbortController();
@@ -55,24 +55,27 @@ export function useAnalysisStream(
     }
   }, []);
 
+  const applySnapshot = useCallback((next: AnalysisSnapshot) => {
+    if (!mounted.current) return;
+    lastCursor.current = Math.max(lastCursor.current, next.lastEventId);
+    setSnapshot((current) => mergeSnapshots(current, next));
+  }, []);
+
   const fetchSnapshot = useCallback(async () => {
-    const response = await request(`/api/analyses/${jobId}`, {
+    const response = await request(`/api/analyses/${workspaceId}`, {
       cache: "no-store",
     });
     if (!response.ok) throw new Error("无法刷新分析结果");
 
     const next = await response.json() as AnalysisSnapshot;
-    if (mounted.current) {
-      lastCursor.current = Math.max(lastCursor.current, next.lastEventId);
-      setSnapshot((current) => mergeSnapshots(current, next));
-    }
+    applySnapshot(next);
     return next;
-  }, [jobId, request]);
+  }, [applySnapshot, workspaceId, request]);
 
   const retryModule = useCallback(
     async (moduleType: RetryableModuleType) => {
       const response = await request(
-        `/api/analyses/${jobId}/modules/${moduleType}/retry`,
+        `/api/analyses/${workspaceId}/modules/${moduleType}/retry`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -87,7 +90,7 @@ export function useAnalysisStream(
       }
       await fetchSnapshot();
     },
-    [fetchSnapshot, jobId, request],
+    [fetchSnapshot, workspaceId, request],
   );
 
   const networkActive = shouldUseNetwork(snapshot);
@@ -122,7 +125,7 @@ export function useAnalysisStream(
       if (!active) return;
       setConnectionState("connecting");
       source = new EventSource(
-        `/api/analyses/${jobId}/events?after=${lastCursor.current}`,
+        `/api/analyses/${workspaceId}/events?after=${lastCursor.current}`,
       );
       source.onopen = () => {
         if (!active) return;
@@ -167,37 +170,30 @@ export function useAnalysisStream(
       if (pollTimer) clearTimeout(pollTimer);
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [fetchSnapshot, jobId, networkActive]);
+  }, [fetchSnapshot, workspaceId, networkActive]);
 
   return {
     snapshot,
     connectionState,
     retryModule,
+    applySnapshot,
     refreshSnapshot: fetchSnapshot,
   };
 }
 
 function shouldUseNetwork(snapshot: AnalysisSnapshot): boolean {
-  if (
-    snapshot.messages?.some(
-      (message) =>
-        message.role === "user" &&
-        (message.status === "queued" ||
-          message.status === "running" ||
-          message.status === "recoverable"),
+  return snapshot.activeRun?.status === "queued"
+    || snapshot.activeRun?.status === "running"
+    || snapshot.activeRun?.status === "recoverable"
+    || snapshot.messages.some((message) =>
+      message.status === "queued"
+      || message.status === "running"
+      || message.status === "recoverable"
     )
-  ) {
-    return true;
-  }
-  if (snapshot.status === "completed" || snapshot.status === "recoverable") {
-    return false;
-  }
-  if (snapshot.status === "partial") {
-    return Object.values(snapshot.modules).some(
-      (module) => module.status === "running",
-    );
-  }
-  return true;
+    || snapshot.status === "queued"
+    || snapshot.status === "running"
+    || snapshot.status === "partial"
+    || snapshot.status === "recoverable";
 }
 
 function mergeSnapshots(

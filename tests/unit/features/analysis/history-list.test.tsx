@@ -55,6 +55,10 @@ it("shows newest reports first with status and a resume link", () => {
     "/analysis/newest",
   );
   expect(within(reports[1]).getByText("分析中")).toBeInTheDocument();
+  expect(within(reports[1]).getByRole("link", { name: "继续查看" })).toHaveAttribute(
+    "href",
+    "/analysis/older",
+  );
 });
 
 it("shows an empty-state link back to the input page", () => {

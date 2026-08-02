@@ -9,6 +9,7 @@ import type {
   ConversationMessage,
   ReportItemTarget,
 } from "@/features/analysis/domain/contracts";
+import type { WorkspaceAgentRun } from "@/features/analysis/domain/workspace";
 
 type Submission = {
   target: ReportItemTarget;
@@ -21,17 +22,25 @@ type RequestState = "idle" | "submitting" | "failed" | "submitted";
 export function ConversationPanel({
   jobId,
   messages = [],
+  activeRun,
   selectedTarget,
   onRefresh,
 }: {
   jobId: string;
   messages?: readonly ConversationMessage[];
+  activeRun?: WorkspaceAgentRun | null;
   selectedTarget?: ReportItemTarget;
   onRefresh: () => Promise<unknown>;
 }) {
   const [draft, setDraft] = useState("");
   const [requestState, setRequestState] = useState<RequestState>("idle");
   const [lastSubmission, setLastSubmission] = useState<Submission>();
+  const hasBlockingRun =
+    activeRun?.status === "queued"
+    || activeRun?.status === "running"
+    || activeRun?.status === "interrupted"
+    || activeRun?.status === "recoverable";
+  const isProcessing = activeRun?.status === "queued" || activeRun?.status === "running";
   const persistedStatus = latestUserStatus(messages);
   const statusText =
     requestState === "submitting"
@@ -51,6 +60,7 @@ export function ConversationPanel({
                   : "";
 
   async function submit(submission: Submission) {
+    if (hasBlockingRun) return;
     setRequestState("submitting");
     setLastSubmission(submission);
     try {
@@ -71,7 +81,7 @@ export function ConversationPanel({
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = draft.trim();
-    if (!selectedTarget || !content || requestState === "submitting") return;
+    if (!selectedTarget || !content || requestState === "submitting" || hasBlockingRun) return;
     void submit({
       target: selectedTarget,
       content,
@@ -80,7 +90,7 @@ export function ConversationPanel({
   }
 
   function retryMessage(message: ConversationMessage) {
-    if (!message.idempotencyKey) return;
+    if (!message.idempotencyKey || hasBlockingRun) return;
     void submit({
       target: message.target,
       content: message.content,
@@ -113,7 +123,7 @@ export function ConversationPanel({
                       variant="outline"
                       size="sm"
                       className="mt-3"
-                      disabled={requestState === "submitting"}
+                      disabled={requestState === "submitting" || hasBlockingRun}
                       onClick={() => retryMessage(message)}
                     >
                       重试这条质疑
@@ -126,7 +136,15 @@ export function ConversationPanel({
         </ol>
       ) : null}
 
-      {statusText ? <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">{statusText}</p> : null}
+      {isProcessing ? (
+        <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">
+          正在处理此工作空间
+        </p>
+      ) : statusText ? (
+        <p aria-live="polite" aria-atomic="true" className="mt-auto pb-2 text-xs text-ink-faint">
+          {statusText}
+        </p>
+      ) : null}
       <form className="mt-auto shrink-0 flex items-end gap-2 rounded-2xl border border-border bg-white px-3 py-2 shadow-sm" onSubmit={onSubmit}>
         <label className="sr-only" htmlFor="challenge-content">继续追问</label>
         <Textarea
@@ -134,13 +152,13 @@ export function ConversationPanel({
           value={draft}
           maxLength={5_000}
           required
-          disabled={requestState === "submitting"}
+          disabled={requestState === "submitting" || hasBlockingRun}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="继续追问…"
           className="min-h-10 flex-1 resize-none border-0 bg-transparent px-1 py-2 shadow-none focus-visible:border-0 focus-visible:ring-0"
         />
-        <Button type="submit" aria-label="发送追问" className="size-9 rounded-full p-0" disabled={!selectedTarget || !draft.trim() || requestState === "submitting"}><ArrowUp size={17} aria-hidden="true" /></Button>
-        {requestState === "failed" && lastSubmission ? <Button type="button" variant="outline" size="sm" aria-label="重试质疑" onClick={() => void submit(lastSubmission)}>重试</Button> : null}
+        <Button type="submit" aria-label="发送追问" className="size-9 rounded-full p-0" disabled={!selectedTarget || !draft.trim() || requestState === "submitting" || hasBlockingRun}><ArrowUp size={17} aria-hidden="true" /></Button>
+        {requestState === "failed" && lastSubmission ? <Button type="button" variant="outline" size="sm" aria-label="重试质疑" disabled={hasBlockingRun} onClick={() => void submit(lastSubmission)}>重试</Button> : null}
       </form>
     </section>
   );

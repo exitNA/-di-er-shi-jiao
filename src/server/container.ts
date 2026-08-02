@@ -9,18 +9,19 @@ import {
   type SubmitAnalysisInput,
   type SubmitAnalysisResult,
 } from "@/features/analysis/server/submit-analysis";
-import { OpenAICompatibleGenerator } from "@/server/adapters/ai/openai-compatible-generator";
-import { CozeLlmGenerator } from "@/server/adapters/ai/coze-llm-generator";
+import {
+  createOpenAICompatibleLanguageModel,
+  OpenAICompatibleGenerator,
+} from "@/server/adapters/ai/openai-compatible-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
 import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
 import { AiExpertSuite } from "@/server/agents/ai-expert-suite";
-import { BaselineOrchestrator } from "@/server/agents/baseline-orchestrator";
-import { FakeExpertSuite } from "@/server/agents/fake-expert-suite";
+import { WorkspaceAgentRuntime } from "@/server/agents/workspace-agent-runtime";
+import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
 import { recordProductEvent } from "./observability/product-events";
-import { RevisionOrchestrator } from "@/features/conversation/server/revision-orchestrator";
 import {
   submitChallenge,
   type SubmitChallengeInput,
@@ -32,8 +33,7 @@ export type ApplicationContainer = {
   authService: AuthService;
   analysisRepository: AnalysisRepository;
   analysisDispatcher: AnalysisDispatcher;
-  baselineOrchestrator: BaselineOrchestrator;
-  revisionOrchestrator: RevisionOrchestrator;
+  workspaceAgentRuntime: Pick<WorkspaceAgentRuntime, "run">;
   submitAnalysis(input: SubmitAnalysisInput): Promise<SubmitAnalysisResult>;
   submitChallenge(input: SubmitChallengeInput): Promise<SubmitChallengeResult>;
 };
@@ -49,37 +49,30 @@ export function getContainer(): ApplicationContainer {
     const productEventRecorder = (
       input: Parameters<typeof recordProductEvent>[1],
     ) => recordProductEvent(db, input);
-    const experts =
-      env.AGENT_ADAPTER === "fake"
-        ? new FakeExpertSuite()
-        : new AiExpertSuite({
-            generator:
-              env.AGENT_ADAPTER === "coze-coding-dev-sdk"
-                ? new CozeLlmGenerator()
-                : new OpenAICompatibleGenerator({
-                    baseURL: env.LLM_BASE_URL!,
-                    apiKey: env.LLM_API_KEY!,
-                    modelId: env.LLM_MODEL_ID!,
-                  }),
-            searchClient: new TavilySearchClient({
-              apiKey: env.TAVILY_API_KEY!,
-            }),
-          });
-    const baselineOrchestrator = new BaselineOrchestrator(
+    const llmConfig = {
+      baseURL: env.LLM_BASE_URL,
+      apiKey: env.LLM_API_KEY,
+      modelId: env.LLM_MODEL_ID,
+    };
+    const experts = new AiExpertSuite({
+      generator: new OpenAICompatibleGenerator(llmConfig),
+      ...(env.TAVILY_API_KEY
+        ? { searchClient: new TavilySearchClient({ apiKey: env.TAVILY_API_KEY }) }
+        : {}),
+    });
+    const workspaceToolExecutor = new WorkspaceToolExecutor(
       experts,
       analysisRepository,
       now,
-      productEventRecorder,
     );
-    const revisionOrchestrator = new RevisionOrchestrator(
-      experts,
+    const workspaceAgentRuntime = new WorkspaceAgentRuntime(
+      createOpenAICompatibleLanguageModel(llmConfig),
+      workspaceToolExecutor,
       analysisRepository,
-      now,
-      productEventRecorder,
     );
     const analysisDispatcher =
       env.ANALYSIS_RUNTIME === "in-process"
-        ? new InProcessAnalysisDispatcher(baselineOrchestrator)
+        ? new InProcessAnalysisDispatcher(workspaceAgentRuntime, analysisRepository)
         : new TriggerAnalysisDispatcher();
     container = {
       db,
@@ -90,8 +83,7 @@ export function getContainer(): ApplicationContainer {
       ),
       analysisRepository,
       analysisDispatcher,
-      baselineOrchestrator,
-      revisionOrchestrator,
+      workspaceAgentRuntime,
       submitAnalysis: (input) =>
         submitAnalysis(
           input,
@@ -104,7 +96,7 @@ export function getContainer(): ApplicationContainer {
         submitChallenge(
           input,
           analysisRepository,
-          revisionOrchestrator,
+          analysisDispatcher,
           now,
           productEventRecorder,
         ),

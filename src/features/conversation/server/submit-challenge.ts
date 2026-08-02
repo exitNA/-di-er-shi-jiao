@@ -5,9 +5,9 @@ import {
   type ConversationMessage,
   type ReportItemTarget,
 } from "@/features/analysis/domain/contracts";
+import type { AnalysisDispatcher } from "@/features/analysis/server/analysis-dispatcher";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
 import type { ProductEventRecorder } from "@/server/observability/product-events";
-import type { RevisionOrchestrator } from "./revision-orchestrator";
 
 const logger = getLogger(["second-perspective", "conversation"]);
 
@@ -23,37 +23,39 @@ export type SubmitChallengeResult =
   | {
       ok: true;
       messageId: string;
-      revisionId?: string;
+      agentRunId: string;
       created: boolean;
       status: ConversationMessage["status"];
     }
-  | { ok: false; code: "INVALID_TARGET" | "NOT_FOUND" };
+  | { ok: false; code: "INVALID_TARGET" | "NOT_FOUND" | "RUN_BUSY" };
 
 export async function submitChallenge(
   input: SubmitChallengeInput,
   repository: AnalysisRepository,
-  orchestrator: RevisionOrchestrator,
+  dispatcher: AnalysisDispatcher,
   now: () => Date = () => new Date(),
   recordProductEvent: ProductEventRecorder = async () => false,
 ): Promise<SubmitChallengeResult> {
   const snapshot = await repository.getOwnedSnapshot(input.userId, input.jobId);
   if (!snapshot) return { ok: false, code: "NOT_FOUND" };
   const targetExists = resolveReportItemTarget(snapshot.modules, input.target);
-  const challenge = targetExists
-    ? await repository.createChallenge({
-        ...input,
-        reportId: snapshot.reportId,
-        now: now(),
-      })
-    : await repository.findChallengeByIdempotency({
-        userId: input.userId,
-        jobId: input.jobId,
-        reportId: snapshot.reportId,
-        idempotencyKey: input.idempotencyKey,
-      }).then((existing) => existing && { ...existing, created: false });
-  if (!challenge) {
-    return { ok: false, code: targetExists ? "NOT_FOUND" : "INVALID_TARGET" };
+  if (!targetExists) {
+    const existing = await repository.findChallengeByIdempotency({
+      userId: input.userId,
+      jobId: input.jobId,
+      reportId: snapshot.reportId,
+      idempotencyKey: input.idempotencyKey,
+    });
+    if (!existing) return { ok: false, code: "INVALID_TARGET" };
   }
+  const challenge = await repository.createChallengeAgentRun({
+    ...input,
+    reportId: snapshot.reportId,
+    configVersion: "agent-v1",
+    now: now(),
+  });
+  if (!challenge) return { ok: false, code: "NOT_FOUND" };
+  if ("code" in challenge) return { ok: false, code: challenge.code };
 
   if (challenge.created) {
     await repository.appendEvent({
@@ -83,17 +85,34 @@ export async function submitChallenge(
     }
   }
 
-  const result = await orchestrator.run({
-    userId: input.userId,
-    jobId: input.jobId,
-    messageId: challenge.messageId,
-  });
-  if (result.status === "not-found") return { ok: false, code: "NOT_FOUND" };
+  let status = challenge.status;
+  if (challenge.shouldEnqueue) {
+    try {
+      await dispatcher.enqueue({
+        workspaceId: input.jobId,
+        agentRunId: challenge.agentRunId,
+        dispatchKey: `${challenge.agentRunId}:challenge`,
+      });
+    } catch (error) {
+      const recovered = await repository.finishAgentRun({
+        workspaceId: input.jobId,
+        userId: input.userId,
+        agentRunId: challenge.agentRunId,
+        status: "recoverable",
+        now: now(),
+      });
+      const latest = recovered ? null : await repository.getOwnedSnapshot(input.userId, input.jobId);
+      if (!recovered && latest?.messages.find((message) => message.id === challenge.messageId)?.status !== "recoverable") {
+        throw error;
+      }
+      status = "recoverable";
+    }
+  }
   return {
     ok: true,
     messageId: challenge.messageId,
-    ...(result.status === "completed" ? { revisionId: result.revisionId } : {}),
+    agentRunId: challenge.agentRunId,
     created: challenge.created,
-    status: result.status,
+    status,
   };
 }

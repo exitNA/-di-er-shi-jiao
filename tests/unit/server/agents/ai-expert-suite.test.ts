@@ -156,6 +156,36 @@ describe("AiExpertSuite", () => {
     expect((prompt.match(/<external_source /g) ?? []).length).toBeLessThanOrEqual(8);
   });
 
+  it("does not search or retain external-source fields when search is unavailable", async () => {
+    const model = generator({
+      claims: [statement],
+      sources: [
+        {
+          id: "source-1",
+          title: "不应保留",
+          url: "https://example.com/source",
+          domain: "example.com",
+          publisher: "example.com",
+          publishedAt: null,
+          qualityTier: 3,
+          excerpt: "外部内容",
+        },
+      ],
+      relations: [{ claimId: statement.id, sourceId: "source-1", relation: "supports" }],
+      gaps: [statement],
+    });
+    const suite = new AiExpertSuite({ generator: model });
+
+    const resultWithoutSearch = await suite.researchSources({ material: "仅有提交素材。" });
+
+    expect(resultWithoutSearch.value).toMatchObject({
+      claims: [statement],
+      sources: [],
+      relations: [],
+      gaps: [],
+    });
+  });
+
   it("selects three to five real candidates when available and replaces invalid sparse-source gaps", async () => {
     const candidates = [
       result("https://one.example.gov/a"),

@@ -2,6 +2,7 @@ export const analysisJobStatuses = [
   "queued",
   "running",
   "partial",
+  "interrupted",
   "completed",
   "recoverable",
 ] as const;
@@ -13,11 +14,12 @@ export const reportModuleStatuses = ["queued", "running", "completed", "failed"]
 export type ReportModuleStatus = (typeof reportModuleStatuses)[number];
 
 const jobTransitions: Record<AnalysisJobStatus, readonly AnalysisJobStatus[]> = {
-  queued: ["running"],
-  running: ["partial", "completed", "recoverable"],
-  partial: ["running", "completed", "recoverable"],
+  queued: ["running", "interrupted"],
+  running: ["partial", "interrupted", "completed", "recoverable"],
+  partial: ["running", "interrupted", "completed", "recoverable"],
+  interrupted: ["running"],
   completed: [],
-  recoverable: ["running"],
+  recoverable: ["running", "interrupted"],
 };
 
 export function canTransitionJob(from: AnalysisJobStatus, to: AnalysisJobStatus): boolean {
