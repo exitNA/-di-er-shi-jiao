@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, NoObjectGeneratedError, Output } from "ai";
+import { NoObjectGeneratedError, Output, streamText } from "ai";
 import type {
   StructuredGenerationInput,
   StructuredGenerator,
@@ -76,7 +76,7 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
     usage: { inputTokens: number; outputTokens: number; latencyMs: number };
   }> {
     const startedAt = performance.now();
-    const result = await generateText({
+    const result = streamText({
       model: this.model,
       system: retrying
         ? `${input.system}\n\nThe previous response violated the requested schema. Return only valid JSON matching it.`
@@ -86,11 +86,16 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
       abortSignal: input.abortSignal,
     });
 
+    for await (const _partial of result.partialOutputStream) {
+      // Consume the provider stream before validating its final structured output.
+    }
+    const output = await result.output;
+    const usage = await result.usage;
     return {
-      value: result.output,
+      value: output,
       usage: {
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
         latencyMs: Math.round(performance.now() - startedAt),
       },
     };
