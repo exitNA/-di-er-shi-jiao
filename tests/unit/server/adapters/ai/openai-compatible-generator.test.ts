@@ -15,20 +15,7 @@ describe("OpenAICompatibleGenerator", () => {
       expect(request.headers.get("authorization")).toBe("Bearer test-key");
       expect((await request.json()).model).toBe("test-model");
 
-      return Response.json({
-        id: "chatcmpl-test",
-        object: "chat.completion",
-        created: 0,
-        model: "test-model",
-        choices: [
-          {
-            index: 0,
-            finish_reason: "stop",
-            message: { role: "assistant", content: '{"status":"ok"}' },
-          },
-        ],
-        usage: { prompt_tokens: 7, completion_tokens: 3, total_tokens: 10 },
-      });
+      return chatCompletionStream('{"status":"ok"}', 7, 3);
     });
     const generator = new OpenAICompatibleGenerator({
       apiKey: "test-key",
@@ -84,3 +71,25 @@ describe("OpenAICompatibleGenerator", () => {
     expect(result.text).toBe("done");
   });
 });
+
+function chatCompletionStream(content: string, promptTokens: number, completionTokens: number) {
+  const body = [
+    `data: ${JSON.stringify({
+      id: "chatcmpl-test",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test-model",
+      choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }],
+    })}\n\n`,
+    `data: ${JSON.stringify({
+      id: "chatcmpl-test",
+      object: "chat.completion.chunk",
+      created: 0,
+      model: "test-model",
+      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens },
+    })}\n\n`,
+    "data: [DONE]\n\n",
+  ].join("");
+  return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+}
