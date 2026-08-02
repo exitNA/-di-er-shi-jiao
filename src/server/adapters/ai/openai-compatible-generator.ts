@@ -1,5 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { NoObjectGeneratedError, Output, streamText } from "ai";
+import { streamText } from "ai";
+import { getLogger } from "@logtape/logtape";
 import type {
   StructuredGenerationInput,
   StructuredGenerator,
@@ -18,6 +19,8 @@ export type GeneratorErrorCode =
   | "LLM_RATE_LIMITED"
   | "LLM_SCHEMA_INVALID"
   | "LLM_UNKNOWN_ERROR";
+
+const logger = getLogger(["second-perspective", "llm"]);
 
 export function createOpenAICompatibleLanguageModel(
   config: OpenAICompatibleGeneratorConfig,
@@ -56,9 +59,8 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
     try {
       return await this.generateOnce(input, false);
     } catch (error) {
-      if (!NoObjectGeneratedError.isInstance(error)) {
-        throw toGeneratorError(error);
-      }
+      const generatorError = toGeneratorError(error);
+      if (generatorError.code !== "LLM_SCHEMA_INVALID") throw generatorError;
 
       try {
         return await this.generateOnce(input, true);
@@ -76,20 +78,49 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
     usage: { inputTokens: number; outputTokens: number; latencyMs: number };
   }> {
     const startedAt = performance.now();
+    const attempt = retrying ? 2 : 1;
+    const system = retrying
+      ? `${input.system}\n\n上一次结果无法被应用解析。请返回与任务所需结构匹配的有效 JSON，不要使用 Markdown。`
+      : input.system;
+    logger.info("LLM stream started", {
+      operation: input.operation,
+      attempt,
+      system: redactLlmLogText(system),
+      prompt: redactLlmLogText(input.prompt),
+    });
     const result = streamText({
       model: this.model,
-      system: retrying
-        ? `${input.system}\n\nThe previous response violated the requested schema. Return only valid JSON matching it.`
-        : input.system,
+      system,
       prompt: input.prompt,
-      output: Output.object({ schema: input.schema }),
       abortSignal: input.abortSignal,
     });
 
-    for await (const _partial of result.partialOutputStream) {
-      // Consume the provider stream before validating its final structured output.
+    let text = "";
+    try {
+      for await (const delta of result.textStream) text += delta;
+    } catch (error) {
+      logger.error("LLM stream failed", {
+        operation: input.operation,
+        attempt,
+        system: redactLlmLogText(system),
+        prompt: redactLlmLogText(input.prompt),
+        output: redactLlmLogText(text),
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+      throw error;
     }
-    const output = await result.output;
+    logger.info("LLM stream completed", {
+      operation: input.operation,
+      attempt,
+      output: redactLlmLogText(text),
+    });
+    const output = parseStructuredOutput(text, input.schema);
+    if (output === undefined) {
+      throw new GeneratorError(
+        "LLM_SCHEMA_INVALID",
+        new Error("The generated text did not contain JSON matching the requested schema."),
+      );
+    }
     const usage = await result.usage;
     return {
       value: output,
@@ -104,9 +135,6 @@ export class OpenAICompatibleGenerator implements StructuredGenerator {
 
 function toGeneratorError(error: unknown): GeneratorError {
   if (error instanceof GeneratorError) return error;
-  if (NoObjectGeneratedError.isInstance(error)) {
-    return new GeneratorError("LLM_SCHEMA_INVALID", error);
-  }
 
   const statusCode =
     typeof error === "object" && error !== null && "statusCode" in error
@@ -123,4 +151,109 @@ function toGeneratorError(error: unknown): GeneratorError {
   }
 
   return new GeneratorError("LLM_UNKNOWN_ERROR", error);
+}
+
+export function redactLlmLogText(value: string): string {
+  return value
+    .replace(/\bBearer\s+[^\s"'`<>{}]+/gi, "Bearer [REDACTED]")
+    .replace(/((?:["']?authorization["']?|["']?(?:api[_-]?key|x-api-key)["']?)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\r\n,;}\]]+)/gi, "$1[REDACTED]")
+    .replace(/([?&](?:api[_-]?key|access_token|token)=)[^&#\s]+/gi, "$1[REDACTED]")
+    .replace(/\b(?:sk|rk)-[A-Za-z0-9_-]{8,}\b/g, "[REDACTED]");
+}
+
+function parseStructuredOutput<T>(text: string, schema: StructuredGenerationInput<T>["schema"]): T | undefined {
+  for (const candidate of jsonCandidates(text)) {
+    const value = parseJson(candidate);
+    if (value === undefined) continue;
+    const parsed = schema.safeParse(value);
+    if (parsed.success) return parsed.data;
+  }
+  return undefined;
+}
+
+function jsonCandidates(text: string): string[] {
+  const candidates = [...fencedJsonCandidates(text), ...balancedJsonCandidates(text)];
+  return [...new Set(candidates.map((candidate) => candidate.trim()).filter(Boolean))];
+}
+
+function fencedJsonCandidates(text: string): string[] {
+  return [...text.matchAll(/```(?:json|jsonc)?[ \t]*\r?\n?([\s\S]*?)```/gi)].map((match) => match[1]);
+}
+
+function balancedJsonCandidates(text: string): string[] {
+  const candidates: string[] = [];
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== "{" && text[start] !== "[") continue;
+    const end = findJsonEnd(text, start);
+    if (end !== undefined) candidates.push(text.slice(start, end + 1));
+  }
+  return candidates;
+}
+
+function findJsonEnd(text: string, start: number): number | undefined {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "{" || character === "[") {
+      stack.push(character);
+      continue;
+    }
+    if (character !== "}" && character !== "]") continue;
+    const opening = stack.pop();
+    if ((character === "}" && opening !== "{") || (character === "]" && opening !== "[")) return undefined;
+    if (stack.length === 0) return index;
+  }
+  return undefined;
+}
+
+function parseJson(candidate: string): unknown | undefined {
+  try {
+    return JSON.parse(candidate.replace(/^\uFEFF/, ""));
+  } catch {
+    try {
+      return JSON.parse(removeTrailingCommas(candidate).replace(/^\uFEFF/, ""));
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+function removeTrailingCommas(text: string): string {
+  let result = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      result += character;
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+    if (character === ",") {
+      let next = index + 1;
+      while (/\s/.test(text[next] ?? "")) next += 1;
+      if (text[next] === "}" || text[next] === "]") continue;
+    }
+    result += character;
+  }
+  return result;
 }
