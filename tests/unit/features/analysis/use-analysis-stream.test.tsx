@@ -84,7 +84,8 @@ describe("useAnalysisStream", () => {
   });
 
   it("renders streamed Agent output without waiting for a snapshot refresh", async () => {
-    const { result } = renderHook(() => useAnalysisStream("job-1", snapshot()));
+    const initial = snapshot();
+    const { result } = renderHook(() => useAnalysisStream("job-1", initial));
 
     await act(async () => {
       MockEventSource.instances[0].emitAgentOutput("正在核对论证。", "1");

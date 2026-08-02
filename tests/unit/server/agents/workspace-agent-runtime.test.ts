@@ -50,7 +50,6 @@ describe("WorkspaceAgentRuntime", () => {
       executor.executed.map(() => ({
         workspaceId,
         agentRunId,
-        userId: "user-1",
         signal,
         kind: "baseline",
         completedTools: [],
