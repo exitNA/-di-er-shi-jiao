@@ -1,5 +1,8 @@
 import type { WorkspaceAgentRunInput, WorkspaceAgentRunResult } from "@/server/agents/workspace-agent-runtime";
+import { getLogger } from "@logtape/logtape";
 import type { AnalysisRepository } from "./analysis-repository";
+
+const logger = getLogger(["second-perspective", "agent-run"]);
 
 export interface AnalysisDispatcher {
   enqueue(input: {
@@ -24,8 +27,12 @@ export async function executeAgentRun(
   repository: AgentRunLifecycleRepository,
   now: () => Date = () => new Date(),
 ): Promise<"completed" | "interrupted" | "recoverable" | "unavailable"> {
+  const startedAt = Date.now();
   const job = await repository.getJobForExecution(input.workspaceId);
-  if (!job) return "unavailable";
+  if (!job) {
+    logger.warning("Agent run unavailable", { workspaceId: input.workspaceId, agentRunId: input.agentRunId });
+    return "unavailable";
+  }
 
   const claimed = await repository.claimAgentRun({
     workspaceId: input.workspaceId,
@@ -35,6 +42,7 @@ export async function executeAgentRun(
     now: now(),
   });
   if (!claimed) return "unavailable";
+  logger.info("Agent run started", { workspaceId: input.workspaceId, agentRunId: input.agentRunId, triggerRunId: input.triggerRunId });
 
   try {
     const result = await runtime.run({
@@ -49,6 +57,7 @@ export async function executeAgentRun(
         agentRunId: input.agentRunId,
         now: now(),
       });
+      logger.info("Agent run interrupted", { workspaceId: input.workspaceId, agentRunId: input.agentRunId, durationMs: Date.now() - startedAt });
       return "interrupted";
     }
     await repository.finishAgentRun({
@@ -58,8 +67,9 @@ export async function executeAgentRun(
       status: "completed",
       now: now(),
     });
+    logger.info("Agent run completed", { workspaceId: input.workspaceId, agentRunId: input.agentRunId, durationMs: Date.now() - startedAt });
     return "completed";
-  } catch {
+  } catch (error) {
     if (input.signal.aborted) {
       await repository.requestAgentRunCancellation({
         workspaceId: input.workspaceId,
@@ -67,6 +77,7 @@ export async function executeAgentRun(
         agentRunId: input.agentRunId,
         now: now(),
       });
+      logger.info("Agent run interrupted", { workspaceId: input.workspaceId, agentRunId: input.agentRunId, durationMs: Date.now() - startedAt });
       return "interrupted";
     }
     await repository.finishAgentRun({
@@ -76,6 +87,13 @@ export async function executeAgentRun(
       status: "recoverable",
       now: now(),
     });
+    logger.error("Agent run failed", { workspaceId: input.workspaceId, agentRunId: input.agentRunId, durationMs: Date.now() - startedAt, errorCode: errorCode(error), errorName: error instanceof Error ? error.name : "unknown" });
     return "recoverable";
   }
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : "AGENT_RUN_FAILED";
 }

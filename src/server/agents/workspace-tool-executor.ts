@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { getLogger } from "@logtape/logtape";
 
 import {
   argumentModuleSchema,
@@ -92,6 +93,7 @@ const baselineToolModules = [
 ] as const;
 
 const revisionLeaseMs = 30_000;
+const logger = getLogger(["second-perspective", "agent-tool"]);
 
 export class WorkspaceToolExecutor {
   constructor(
@@ -622,6 +624,7 @@ export class WorkspaceToolExecutor {
   ): Promise<ExpertResult<T>> {
     const id = randomUUID();
     const startedAt = Date.now();
+    logger.info("Expert run started", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt });
     await this.repository.startExpertRun({
       id,
       jobId: job.jobId,
@@ -634,9 +637,11 @@ export class WorkspaceToolExecutor {
     try {
       const result = await run();
       await this.finishExpertRun(id, "completed", result.usage, Date.now() - startedAt);
+      logger.info("Expert run completed", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt, durationMs: Date.now() - startedAt });
       return result;
     } catch (error) {
       await this.finishExpertRun(id, "failed", undefined, Date.now() - startedAt, errorCode(error));
+      logger.error("Expert run failed", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt, durationMs: Date.now() - startedAt, errorCode: errorCode(error), errorName: error instanceof Error ? error.name : "unknown" });
       throw error;
     }
   }
