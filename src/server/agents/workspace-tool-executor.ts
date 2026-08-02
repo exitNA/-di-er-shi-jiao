@@ -641,7 +641,16 @@ export class WorkspaceToolExecutor {
       return result;
     } catch (error) {
       await this.finishExpertRun(id, "failed", undefined, Date.now() - startedAt, errorCode(error));
-      logger.error("Expert run failed", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt, durationMs: Date.now() - startedAt, errorCode: errorCode(error), errorName: error instanceof Error ? error.name : "unknown" });
+      logger.error("Expert run failed", {
+        workspaceId: job.jobId,
+        expertRunId: id,
+        expertType,
+        phase,
+        attempt,
+        durationMs: Date.now() - startedAt,
+        errorCode: errorCode(error),
+        ...safeErrorMetadata(error),
+      });
       throw error;
     }
   }
@@ -797,6 +806,34 @@ function errorCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
   if (error instanceof Error && error.name === "ZodError") return "INVALID_EXPERT_OUTPUT";
   return "EXPERT_FAILED";
+}
+
+function safeErrorMetadata(error: unknown): Record<string, string | number> {
+  const outer = asRecord(error);
+  const cause = outer && "cause" in outer ? outer.cause : undefined;
+  const source = cause ?? error;
+  const details = asRecord(source);
+  const name = source instanceof Error ? source.name : "unknown";
+  const message = source instanceof Error ? source.message.replace(/\s+/g, " ").slice(0, 240) : "";
+  const statusCode = details && typeof details.statusCode === "number" ? details.statusCode : undefined;
+  const headers = details && "responseHeaders" in details ? asRecord(details.responseHeaders) : undefined;
+  const providerRequestId = headers
+    ? firstString(headers["x-request-id"], headers["request-id"], headers["x-amzn-requestid"])
+    : undefined;
+  return {
+    causeName: name,
+    ...(message ? { causeMessage: message } : {}),
+    ...(statusCode === undefined ? {} : { statusCode }),
+    ...(providerRequestId ? { providerRequestId } : {}),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 function environmentPrice(
