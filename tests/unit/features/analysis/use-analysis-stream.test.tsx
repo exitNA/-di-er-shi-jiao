@@ -41,6 +41,16 @@ class MockEventSource {
       }),
     );
   }
+
+  emitAgUi(payload: Record<string, unknown>, lastEventId = "1") {
+    const type = typeof payload.type === "string" ? payload.type : "message";
+    this.listeners.get(type)?.(
+      new MessageEvent(type, {
+        data: JSON.stringify(payload),
+        lastEventId,
+      }),
+    );
+  }
 }
 
 describe("useAnalysisStream", () => {
@@ -93,6 +103,32 @@ describe("useAnalysisStream", () => {
     });
 
     expect(result.current.agentOutput).toBe("正在核对论证。已完成。");
+  });
+
+  it("groups standard AG-UI Agent, reasoning and tool events without replaying duplicate SSE events", async () => {
+    const initial = snapshot();
+    const { result } = renderHook(() => useAnalysisStream("job-1", initial));
+    const source = MockEventSource.instances[0];
+
+    await act(async () => {
+      source.emitAgUi({ type: "RUN_STARTED", runId: "main", agentName: "第二视角 Agent" }, "1");
+      source.emitAgUi({ type: "STEP_STARTED", runId: "main", stepName: "核对证据" }, "2");
+      source.emitAgUi({ type: "REASONING_MESSAGE_CONTENT", runId: "main", messageId: "reason-1", delta: "先比较证据。" }, "3");
+      source.emitAgUi({ type: "TOOL_CALL_START", runId: "main", toolCallId: "tool-1", toolCallName: "search" }, "4");
+      source.emitAgUi({ type: "TOOL_CALL_ARGS", runId: "main", toolCallId: "tool-1", delta: '{"query":"原文"}' }, "5");
+      source.emitAgUi({ type: "TOOL_CALL_RESULT", runId: "main", toolCallId: "tool-1", content: "找到两条来源" }, "6");
+      source.emitAgUi({ type: "TEXT_MESSAGE_CONTENT", runId: "main", messageId: "answer-1", delta: "模型输出" }, "7");
+      source.emitAgUi({ type: "TEXT_MESSAGE_CONTENT", runId: "main", messageId: "answer-1", delta: "模型输出" }, "7");
+    });
+
+    expect(result.current.agentOutput).toBe("模型输出");
+    expect(result.current.agentProcess.runs).toHaveLength(1);
+    const entries = result.current.agentProcess.runs[0].steps.flatMap((step) => step.entries);
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "reasoning", content: "先比较证据。" }),
+      expect.objectContaining({ kind: "tool", title: "search", content: '输入：{"query":"原文"}\n输出：找到两条来源', status: "completed" }),
+      expect.objectContaining({ kind: "text", content: "模型输出" }),
+    ]));
   });
 
   it("ignores module versions older than the current snapshot", async () => {

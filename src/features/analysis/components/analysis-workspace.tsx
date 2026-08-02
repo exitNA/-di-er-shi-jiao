@@ -25,6 +25,7 @@ import { ConversationPanel } from "@/features/conversation/components/conversati
 import { RevisionHistory } from "@/features/conversation/components/revision-history";
 import { AgentWorkspaceLayout } from "./agent-workspace-layout";
 import { AgentRunStatus } from "./agent-run-status";
+import { AgentProcessTimeline } from "./agent-process-timeline";
 import { CurrentFindingsPanel, firstAvailableFindingTarget } from "./current-findings-panel";
 
 const disclaimer =
@@ -35,7 +36,7 @@ export function AnalysisWorkspace({
 }: {
   initialSnapshot: AnalysisSnapshot;
 }) {
-  const { snapshot, agentOutput, retryModule, applySnapshot, refreshSnapshot } =
+  const { snapshot, agentOutput, agentProcess, retryModule, applySnapshot, refreshSnapshot } =
     useAnalysisStream(initialSnapshot.workspaceId, initialSnapshot);
   const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
   const firstModuleEventWorkspaceId = useRef<string | null>(null);
@@ -73,7 +74,7 @@ export function AnalysisWorkspace({
   return (
     <main className="h-[calc(100dvh-4.5rem)] overflow-hidden">
       <AgentWorkspaceLayout
-          conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><AgentRunStatus workspaceId={snapshot.workspaceId} activeRun={snapshot.activeRun} toolCalls={snapshot.toolCalls} onSnapshot={applySnapshot} onRefresh={refreshSnapshot} /><ConversationPanel jobId={snapshot.workspaceId} messages={snapshot.messages} activeRun={snapshot.activeRun} selectedTarget={selectedTarget} agentOutput={agentOutput} onRefresh={refreshSnapshot} /></div></div>}
+          conversation={<div className="flex h-full min-h-0 flex-col"><div className="ml-auto max-w-[92%] rounded-2xl rounded-tr-sm bg-primary px-4 py-3 text-sm leading-7 text-white"><p className="mb-1 text-xs font-semibold text-white/70">你</p>{snapshot.materialPreview}</div><div className="mt-6 min-h-0 flex-1"><AgentProcessTimeline process={agentProcess} /><AgentRunStatus workspaceId={snapshot.workspaceId} activeRun={snapshot.activeRun} toolCalls={snapshot.toolCalls} onSnapshot={applySnapshot} onRefresh={refreshSnapshot} /><ConversationPanel jobId={snapshot.workspaceId} messages={snapshot.messages} activeRun={snapshot.activeRun} selectedTarget={selectedTarget} agentOutput={agentOutput} onRefresh={refreshSnapshot} /></div></div>}
           findings={<><CurrentFindingsPanel modules={snapshot.modules} selectedTarget={selectedTarget} onSelect={setSelectedTarget} /><section className="mt-8" aria-label="完整报告"><div className="space-y-4">
           <ReportModule
             id="report-module-overview"
