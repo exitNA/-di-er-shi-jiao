@@ -36,7 +36,7 @@ export function AnalysisWorkspace({
 }: {
   initialSnapshot: AnalysisSnapshot;
 }) {
-  const { snapshot, agentOutput, agentProcess, retryModule, applySnapshot, refreshSnapshot } =
+  const { snapshot, agentOutput, agentProcess = { runs: [] }, retryModule, applySnapshot, refreshSnapshot } =
     useAnalysisStream(initialSnapshot.workspaceId, initialSnapshot);
   const [selectedTarget, setSelectedTarget] = useState<ReportItemTarget>();
   const firstModuleEventWorkspaceId = useRef<string | null>(null);
