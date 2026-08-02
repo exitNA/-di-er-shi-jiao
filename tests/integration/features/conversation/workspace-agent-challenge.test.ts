@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import { executeAgentRun } from "@/features/analysis/server/analysis-dispatcher";
@@ -237,26 +238,14 @@ function createChallengeRuntime(
 ): WorkspaceAgentRuntime {
   let call = 0;
   const model = new MockLanguageModelV4({
-    doGenerate: async () => {
+    doStream: async () => {
       const review = call++ === 0;
-      return {
-        content: review
-          ? [{
-              type: "tool-call" as const,
-              toolCallId: "review-target",
-              toolName: "review_target",
-              input: "{}",
-            }]
-          : [{ type: "text" as const, text: "done" }],
-        finishReason: {
-          unified: review ? ("tool-calls" as const) : ("stop" as const),
-          raw: undefined,
-        },
-        usage: {
-          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 1, text: 1, reasoning: 0 },
-        },
-      };
+      return streamResult(review ? [{
+        type: "tool-call" as const,
+        toolCallId: "review-target",
+        toolName: "review_target",
+        input: "{}",
+      }] : [{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], review ? "tool-calls" : "stop");
     },
   });
   return new WorkspaceAgentRuntime(
@@ -264,6 +253,21 @@ function createChallengeRuntime(
     new WorkspaceToolExecutor(experts, repository, () => now),
     repository,
   );
+}
+
+function streamResult(chunks: object[], finishReason: "stop" | "tool-calls") {
+  return {
+    stream: simulateReadableStream({
+      chunks: [...chunks, {
+        type: "finish" as const,
+        finishReason: { unified: finishReason, raw: undefined },
+        usage: {
+          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+          outputTokens: { total: 1, text: 1, reasoning: 0 },
+        },
+      }],
+    }),
+  };
 }
 
 async function createCompletedRiskReport() {

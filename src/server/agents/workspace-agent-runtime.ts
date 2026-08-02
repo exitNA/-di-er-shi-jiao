@@ -255,11 +255,12 @@ function createAiSdkTools(
   executor: WorkspaceAgentToolExecutor,
   context: WorkspaceAgentContext,
 ) {
+  const { userId: _userId, ...toolContext } = context;
   const noInputTool = (name: WorkspaceToolName, description: string) =>
     tool({
       description,
       inputSchema: emptyInputSchema,
-      execute: async () => executor.execute(name, context),
+      execute: async () => executor.execute(name, toolContext),
     });
 
   return context.kind === "challenge" ? {
