@@ -75,8 +75,16 @@ export class WorkspaceAgentRuntime {
   ) {}
 
   async run(input: WorkspaceAgentRunInput): Promise<WorkspaceAgentRunResult> {
+    let context: WorkspaceAgentContext | undefined;
     try {
-      const context = await loadWorkspaceAgentContext(this.repository, input);
+      context = await loadWorkspaceAgentContext(this.repository, input);
+      await this.appendEvent(context, "agent.ui.run.started", {
+        runId: input.agentRunId,
+        threadId: input.workspaceId,
+        parentRunId: null,
+        agentId: "second-perspective",
+        agentName: "第二视角 Agent",
+      });
       const agent = new ToolLoopAgent({
         model: this.model,
         instructions: workspaceAgentInstructions,
@@ -87,27 +95,220 @@ export class WorkspaceAgentRuntime {
         prompt: promptForRun(context),
         abortSignal: input.signal,
       });
+      const toolCalls = new Set<string>();
+      const messageIds = new Map<string, string>();
+      let step = 0;
+      let message = 0;
       for await (const part of stream.fullStream) {
-        if (part.type !== "text-delta" || !part.text) continue;
-        await this.repository.appendEvent({
-          jobId: input.workspaceId,
-          userId: context.userId,
-          eventType: "agent.output.delta",
-          payload: { agentRunId: input.agentRunId, text: part.text },
-          now: new Date(),
-        });
+        switch (part.type) {
+          case "start-step": {
+            step += 1;
+            await this.appendEvent(context, "agent.ui.step.started", {
+              runId: input.agentRunId,
+              stepName: `agent-step-${step}`,
+            });
+            break;
+          }
+          case "finish-step":
+            await this.appendEvent(context, "agent.ui.step.finished", {
+              runId: input.agentRunId,
+              stepName: `agent-step-${step}`,
+            });
+            break;
+          case "text-start": {
+            const messageId = `${input.agentRunId}:message:${++message}`;
+            messageIds.set(part.id, messageId);
+            await this.appendEvent(context, "agent.ui.text.started", {
+              runId: input.agentRunId,
+              messageId,
+              role: "assistant",
+            });
+            break;
+          }
+          case "text-delta": {
+            const messageId = messageIds.get(part.id);
+            if (messageId && part.text) {
+              await this.appendEvent(context, "agent.ui.text.delta", {
+                runId: input.agentRunId,
+                messageId,
+                text: redactText(part.text),
+              });
+            }
+            break;
+          }
+          case "text-end": {
+            const messageId = messageIds.get(part.id);
+            if (messageId) {
+              await this.appendEvent(context, "agent.ui.text.finished", {
+                runId: input.agentRunId,
+                messageId,
+              });
+            }
+            break;
+          }
+          case "reasoning-start":
+            await this.appendEvent(context, "agent.ui.reasoning.summary", {
+              runId: input.agentRunId,
+              messageId: `${input.agentRunId}:reasoning:${part.id}`,
+              phase: "start",
+            });
+            break;
+          case "reasoning-delta":
+            if (part.text) {
+              await this.appendEvent(context, "agent.ui.reasoning.summary", {
+                runId: input.agentRunId,
+                messageId: `${input.agentRunId}:reasoning:${part.id}`,
+                phase: "content",
+                text: redactText(part.text),
+              });
+            }
+            break;
+          case "reasoning-end":
+            await this.appendEvent(context, "agent.ui.reasoning.summary", {
+              runId: input.agentRunId,
+              messageId: `${input.agentRunId}:reasoning:${part.id}`,
+              phase: "end",
+            });
+            break;
+          case "tool-input-start":
+            toolCalls.add(part.id);
+            await this.appendEvent(context, "agent.ui.tool.started", {
+              runId: input.agentRunId,
+              toolCallId: part.id,
+              toolCallName: part.toolName,
+            });
+            break;
+          case "tool-input-delta":
+            if (part.delta) {
+              await this.appendEvent(context, "agent.ui.tool.args", {
+                runId: input.agentRunId,
+                toolCallId: part.id,
+                delta: redactText(part.delta),
+              });
+            }
+            break;
+          case "tool-input-end":
+            await this.appendEvent(context, "agent.ui.tool.finished", {
+              runId: input.agentRunId,
+              toolCallId: part.id,
+            });
+            break;
+          case "tool-call":
+            if (!toolCalls.has(part.toolCallId)) {
+              toolCalls.add(part.toolCallId);
+              await this.appendEvent(context, "agent.ui.tool.started", {
+                runId: input.agentRunId,
+                toolCallId: part.toolCallId,
+                toolCallName: part.toolName,
+              });
+              await this.appendEvent(context, "agent.ui.tool.args", {
+                runId: input.agentRunId,
+                toolCallId: part.toolCallId,
+                delta: JSON.stringify(redactValue(part.input)),
+              });
+              await this.appendEvent(context, "agent.ui.tool.finished", {
+                runId: input.agentRunId,
+                toolCallId: part.toolCallId,
+              });
+            }
+            break;
+          case "tool-result":
+            await this.appendEvent(context, "agent.ui.tool.result", {
+              runId: input.agentRunId,
+              toolCallId: part.toolCallId,
+              content: redactValue(part.output),
+            });
+            break;
+          case "tool-error":
+            await this.appendEvent(context, "agent.ui.tool.result", {
+              runId: input.agentRunId,
+              toolCallId: part.toolCallId,
+              content: { error: redactError(part.error) },
+            });
+            break;
+        }
       }
       if (context.kind === "challenge") {
         await assertChallengeRunCompleted(this.repository, input, context.messageId);
       } else {
         await assertBaselineRunCompleted(this.repository, input);
       }
-      return { status: input.signal.aborted ? "interrupted" : "completed" };
+      if (input.signal.aborted) {
+        await this.appendEvent(context, "agent.ui.run.finished", {
+          runId: input.agentRunId,
+          outcome: "interrupt",
+        });
+        return { status: "interrupted" };
+      }
+      await this.appendEvent(context, "agent.ui.run.finished", {
+        runId: input.agentRunId,
+        outcome: "success",
+      });
+      return { status: "completed" };
     } catch (error) {
-      if (input.signal.aborted) return { status: "interrupted" };
+      if (input.signal.aborted) {
+        if (context) {
+          await this.appendEvent(context, "agent.ui.run.finished", {
+            runId: input.agentRunId,
+            outcome: "interrupt",
+          });
+        }
+        return { status: "interrupted" };
+      }
+      if (context) {
+        await this.appendEvent(context, "agent.ui.run.error", {
+          runId: input.agentRunId,
+          message: redactError(error),
+          code: errorCode(error),
+        });
+      }
       throw error;
     }
   }
+
+  private appendEvent(
+    context: WorkspaceAgentContext,
+    eventType: Extract<
+      AnalysisRepository extends { appendEvent(input: infer Input): unknown }
+        ? Input extends { eventType: infer EventType } ? EventType : never
+        : never,
+      string
+    >,
+    payload: Record<string, unknown>,
+  ): Promise<number> {
+    return this.repository.appendEvent({
+      jobId: context.workspaceId,
+      userId: context.userId,
+      eventType,
+      payload,
+      now: new Date(),
+    });
+  }
+}
+
+function redactText(value: string): string {
+  return value
+    .replace(/\b(?:sk|rk|pk)[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
+    .replace(/((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]");
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (!value || typeof value !== "object") return typeof value === "string" ? redactText(value) : value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    /^(api[_-]?key|authorization|token|password|secret)$/i.test(key) ? "[REDACTED]" : redactValue(child),
+  ]));
+}
+
+function redactError(error: unknown): string {
+  return redactText(error instanceof Error ? error.message : "AGENT_RUN_FAILED").slice(0, 500);
+}
+
+function errorCode(error: unknown): string {
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : "AGENT_RUN_FAILED";
 }
 
 export async function loadWorkspaceAgentContext(

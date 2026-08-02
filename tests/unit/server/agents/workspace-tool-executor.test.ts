@@ -51,6 +51,7 @@ class MemoryRepository {
   readonly persistedArtifacts = new Map<string, WorkspaceToolArtifact>();
   readonly completedToolHistory = new Set<string>();
   readonly rejectedFinishes = new Set<string>();
+  readonly events: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
   runStatus: "running" | "interrupted" = "running";
   cancelAfterModule?: ReportModuleType;
 
@@ -177,6 +178,10 @@ class MemoryRepository {
   async saveSourcesModule(input: SaveModule) { return this.saveModule(input); }
 
   async replaceSources() {}
+  async appendEvent(input: { eventType: string; payload: Record<string, unknown> }) {
+    this.events.push(input);
+    return this.events.length;
+  }
   async startExpertRun(input: { id: string }) { return input.id; }
   async finishExpertRun() {}
 
@@ -232,7 +237,7 @@ describe("WorkspaceToolExecutor", () => {
     expect(result).toEqual({ ok: false, code: "REQUIRED_TOOL_UNAVAILABLE" });
   });
 
-  it("stores an expert summary but never the raw prompt or model response", async () => {
+  it("publishes the expert output and omits its prompt", async () => {
     const { executor, repository, context } = setup();
 
     await executor.execute("analyze_argument", context);
@@ -244,6 +249,11 @@ describe("WorkspaceToolExecutor", () => {
     expect(repository.toolCalls[0]).not.toHaveProperty("prompt");
     expect(repository.toolCalls[0]).not.toHaveProperty("rawOutput");
     expect(repository.toolCalls[0]?.summary).not.toContain("raw-secret");
+    expect(repository.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "agent.ui.run.started" }),
+      expect.objectContaining({ eventType: "agent.ui.activity" }),
+      expect.objectContaining({ eventType: "agent.ui.run.finished" }),
+    ]));
   });
 
   it("loads persisted second-review findings without rewriting unchanged modules", async () => {

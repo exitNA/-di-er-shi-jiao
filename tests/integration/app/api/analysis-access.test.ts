@@ -115,10 +115,16 @@ describe("analysis access routes", () => {
     );
     const reader = response.body!.getReader();
     const first = await reader.read();
+    const second = await reader.read();
+    const third = await reader.read();
     abort.abort();
     await vi.advanceTimersByTimeAsync(100);
 
-    expect(new TextDecoder().decode(first.value)).toContain("id: 3");
+    const decoder = new TextDecoder();
+    expect(decoder.decode(first.value)).toContain('"type":"STATE_SNAPSHOT"');
+    expect(decoder.decode(second.value)).toContain('"type":"MESSAGES_SNAPSHOT"');
+    expect(decoder.decode(third.value)).toContain("id: 3");
+    expect(decoder.decode(third.value)).toContain('"type":"CUSTOM"');
     expect(repository.listEvents).toHaveBeenCalledWith(
       "owner-1",
       "job-1",

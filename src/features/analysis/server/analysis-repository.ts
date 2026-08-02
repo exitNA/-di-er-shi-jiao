@@ -255,8 +255,22 @@ export type NewAnalysisEvent = {
     | "agent.run.completed"
     | "agent.run.interrupted"
     | "agent.tool.updated"
-    | "agent.output.delta";
-  payload: Record<string, string | number | boolean | null>;
+    | "agent.output.delta"
+    | "agent.ui.run.started"
+    | "agent.ui.run.finished"
+    | "agent.ui.run.error"
+    | "agent.ui.step.started"
+    | "agent.ui.step.finished"
+    | "agent.ui.text.started"
+    | "agent.ui.text.delta"
+    | "agent.ui.text.finished"
+    | "agent.ui.tool.started"
+    | "agent.ui.tool.args"
+    | "agent.ui.tool.finished"
+    | "agent.ui.tool.result"
+    | "agent.ui.reasoning.summary"
+    | "agent.ui.activity";
+  payload: Record<string, unknown>;
   now: Date;
 };
 

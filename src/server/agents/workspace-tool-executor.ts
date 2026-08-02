@@ -205,6 +205,7 @@ export class WorkspaceToolExecutor {
         const current = owned.snapshot.modules.argument;
         const generated = await this.runExpert(
           owned.job,
+          context.agentRunId,
           "argument",
           "baseline",
           current.version + 1,
@@ -218,6 +219,7 @@ export class WorkspaceToolExecutor {
         const current = owned.snapshot.modules.sources;
         const generated = await this.runExpert(
           owned.job,
+          context.agentRunId,
           "sources",
           "baseline",
           current.version + 1,
@@ -231,6 +233,7 @@ export class WorkspaceToolExecutor {
         const current = owned.snapshot.modules.perspectives;
         const generated = await this.runExpert(
           owned.job,
+          context.agentRunId,
           "perspectives",
           "baseline",
           current.version + 1,
@@ -244,6 +247,7 @@ export class WorkspaceToolExecutor {
         const current = owned.snapshot.modules.risks;
         const generated = await this.runExpert(
           owned.job,
+          context.agentRunId,
           "risks",
           "baseline",
           current.version + 1,
@@ -272,6 +276,7 @@ export class WorkspaceToolExecutor {
     const inputVersions = moduleVersions(owned.snapshot);
     const generated = await this.runExpert(
       owned.job,
+      context.agentRunId,
       "synthesis",
       "baseline",
       owned.snapshot.modules.overview.version + 1,
@@ -313,6 +318,7 @@ export class WorkspaceToolExecutor {
     if (!draft) return failure("REQUIRED_TOOL_UNAVAILABLE");
     const generated = await this.runExpert(
       owned.job,
+      context.agentRunId,
       "perspectives",
       "second-review",
       owned.snapshot.modules.perspectives.version + 1,
@@ -342,6 +348,7 @@ export class WorkspaceToolExecutor {
     }
     const generated = await this.runExpert(
       owned.job,
+      context.agentRunId,
       "synthesis",
       "revision",
       owned.snapshot.modules.overview.version + 1,
@@ -475,6 +482,7 @@ export class WorkspaceToolExecutor {
       const allowedSourceIds = new Set(sources.map((source) => source.id));
       const generated = await this.runExpert(
         execution.job,
+        context.agentRunId,
         "synthesis",
         "revision",
         current.version + 1,
@@ -617,6 +625,7 @@ export class WorkspaceToolExecutor {
 
   private async runExpert<T>(
     job: ExecutionJob,
+    agentRunId: string,
     expertType: "argument" | "sources" | "perspectives" | "risks" | "synthesis",
     phase: "baseline" | "second-review" | "revision",
     attempt: number,
@@ -624,6 +633,26 @@ export class WorkspaceToolExecutor {
   ): Promise<ExpertResult<T>> {
     const id = randomUUID();
     const startedAt = Date.now();
+    await this.repository.appendEvent({
+      jobId: job.jobId,
+      userId: job.userId,
+      eventType: "agent.ui.run.started",
+      payload: {
+        runId: id,
+        parentRunId: agentRunId,
+        threadId: job.jobId,
+        agentId: `expert:${expertType}`,
+        agentName: expertName(expertType),
+      },
+      now: this.now(),
+    });
+    await this.repository.appendEvent({
+      jobId: job.jobId,
+      userId: job.userId,
+      eventType: "agent.ui.step.started",
+      payload: { runId: id, stepName: phase },
+      now: this.now(),
+    });
     logger.info("Expert run started", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt });
     await this.repository.startExpertRun({
       id,
@@ -637,10 +666,43 @@ export class WorkspaceToolExecutor {
     try {
       const result = await run();
       await this.finishExpertRun(id, "completed", result.usage, Date.now() - startedAt);
+      await this.repository.appendEvent({
+        jobId: job.jobId,
+        userId: job.userId,
+        eventType: "agent.ui.activity",
+        payload: {
+          runId: id,
+          messageId: `${id}:output`,
+          activityType: "expert.output",
+          content: JSON.stringify(redactValue(result.value)),
+        },
+        now: this.now(),
+      });
+      await this.repository.appendEvent({
+        jobId: job.jobId,
+        userId: job.userId,
+        eventType: "agent.ui.step.finished",
+        payload: { runId: id, stepName: phase },
+        now: this.now(),
+      });
+      await this.repository.appendEvent({
+        jobId: job.jobId,
+        userId: job.userId,
+        eventType: "agent.ui.run.finished",
+        payload: { runId: id, outcome: "success" },
+        now: this.now(),
+      });
       logger.info("Expert run completed", { workspaceId: job.jobId, expertRunId: id, expertType, phase, attempt, durationMs: Date.now() - startedAt });
       return result;
     } catch (error) {
       await this.finishExpertRun(id, "failed", undefined, Date.now() - startedAt, errorCode(error));
+      await this.repository.appendEvent({
+        jobId: job.jobId,
+        userId: job.userId,
+        eventType: "agent.ui.run.error",
+        payload: { runId: id, message: redactError(error), code: errorCode(error) },
+        now: this.now(),
+      });
       logger.error("Expert run failed", {
         workspaceId: job.jobId,
         expertRunId: id,
@@ -806,6 +868,36 @@ function errorCode(error: unknown): string {
   if (typeof error === "object" && error !== null && "code" in error && typeof error.code === "string") return error.code;
   if (error instanceof Error && error.name === "ZodError") return "INVALID_EXPERT_OUTPUT";
   return "EXPERT_FAILED";
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (!value || typeof value !== "object") return typeof value === "string" ? redactText(value) : value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    /^(api[_-]?key|authorization|token|password|secret)$/i.test(key) ? "[REDACTED]" : redactValue(child),
+  ]));
+}
+
+function redactError(error: unknown): string {
+  return redactText(error instanceof Error ? error.message : "EXPERT_FAILED").slice(0, 500);
+}
+
+function redactText(value: string): string {
+  return value
+    .replace(/\b(?:sk|rk|pk)[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
+    .replace(/((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]");
+}
+
+function expertName(expertType: "argument" | "sources" | "perspectives" | "risks" | "synthesis"): string {
+  const names = {
+    argument: "论证分析 Agent",
+    sources: "信源研究 Agent",
+    perspectives: "多视角挑战 Agent",
+    risks: "风险审查 Agent",
+    synthesis: "综合审校 Agent",
+  } as const;
+  return names[expertType];
 }
 
 function safeErrorMetadata(error: unknown): Record<string, string | number> {

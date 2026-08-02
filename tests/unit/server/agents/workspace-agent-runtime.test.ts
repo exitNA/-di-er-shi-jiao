@@ -3,6 +3,7 @@ import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
+import type { NewAnalysisEvent } from "@/features/analysis/server/analysis-repository";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
 import {
   WorkspaceAgentRuntime,
@@ -59,6 +60,15 @@ describe("WorkspaceAgentRuntime", () => {
       model.doStreamCalls[0]?.tools?.map((candidate) => candidate.name).sort(),
     ).toEqual(workspaceToolNames.filter((name) => name !== "review_target").sort());
     expect(model.doStreamCalls[0]?.abortSignal).toBe(signal);
+    expect(repository.events.map((event) => event.eventType)).toEqual(expect.arrayContaining([
+      "agent.ui.run.started",
+      "agent.ui.step.started",
+      "agent.ui.tool.started",
+      "agent.ui.tool.args",
+      "agent.ui.tool.result",
+      "agent.ui.text.delta",
+      "agent.ui.run.finished",
+    ]));
   });
 
   it("returns interrupted when Agent generation is cancelled", async () => {
@@ -164,7 +174,10 @@ function baselineRepository(
     argumentCompleted?: boolean;
     persistedStep?: "synthesis" | "revision" | "stale-revision";
   } = {},
-): WorkspaceAgentContextRepository & { complete(name: WorkspaceToolName): void } {
+): WorkspaceAgentContextRepository & {
+  complete(name: WorkspaceToolName): void;
+  events: NewAnalysisEvent[];
+} {
   const completedBaseline = options.persistedStep !== undefined;
   const currentVersions = moduleVersions(1);
   const synthesisInput = { ...moduleVersions(1), overview: 0, reflection: 0 };
@@ -271,7 +284,9 @@ function baselineRepository(
           : []),
       ]
     : []);
+  const events: NewAnalysisEvent[] = [];
   return {
+    events,
     complete(name) {
       completedToolNames.add(name);
       const moduleType = baselineModuleType(name);
@@ -319,8 +334,9 @@ function baselineRepository(
     async listPersistedAgentToolArtifacts(input: { toolName: WorkspaceToolName }) {
       return artifacts[input.toolName] ?? [];
     },
-    async appendEvent() {
-      return 1;
+    async appendEvent(event) {
+      events.push(event);
+      return events.length;
     },
   } as WorkspaceAgentContextRepository & {
     complete(name: WorkspaceToolName): void;
