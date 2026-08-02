@@ -6,7 +6,17 @@ export async function register(): Promise<void> {
   await configure({
     reset: true,
     sinks: {
-      console: getConsoleSink({ formatter: getAnsiColorFormatter({ timestamp: "time" }) }),
+      console: getConsoleSink({
+        formatter: getAnsiColorFormatter({
+          timestamp: "time",
+          format: ({ timestamp, level, category, message, record }) => {
+            const properties = Object.entries(record.properties)
+              .map(([key, value]) => `${key}=${String(value)}`)
+              .join(" ");
+            return `${timestamp} ${level} ${category}: ${message}${properties ? ` ${properties}` : ""}`;
+          },
+        }),
+      }),
     },
     loggers: [
       { category: "second-perspective", lowestLevel: "info", sinks: ["console"] },
