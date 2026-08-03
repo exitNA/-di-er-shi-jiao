@@ -14,6 +14,11 @@ const realAgentEnv = {
   LLM_MODEL_ID: "test-model",
   TAVILY_API_KEY: "test-tavily-key",
 } as const;
+const langfuseEnv = {
+  LANGFUSE_BASE_URL: "http://localhost:3000",
+  LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+  LANGFUSE_SECRET_KEY: "sk-lf-test",
+} as const;
 
 describe("loadServerEnv", () => {
   it("requires the real Agent configuration in every environment", () => {
@@ -26,6 +31,7 @@ describe("loadServerEnv", () => {
     expect(loadServerEnv({
       ...baseEnv,
       ...realAgentEnv,
+      ...langfuseEnv,
     }).LLM_MODEL_ID).toBe("test-model");
   });
 
@@ -33,7 +39,25 @@ describe("loadServerEnv", () => {
     expect(loadServerEnv({
       ...baseEnv,
       ...realAgentEnv,
+      ...langfuseEnv,
       TAVILY_API_KEY: "",
     }).TAVILY_API_KEY).toBeUndefined();
+  });
+
+  it("rejects missing LANGFUSE_SECRET_KEY instead of silently disabling tracing", () => {
+    expect(() => loadServerEnv({
+      ...baseEnv,
+      ...realAgentEnv,
+      LANGFUSE_BASE_URL: langfuseEnv.LANGFUSE_BASE_URL,
+      LANGFUSE_PUBLIC_KEY: langfuseEnv.LANGFUSE_PUBLIC_KEY,
+    })).toThrow(/LANGFUSE_SECRET_KEY/);
+  });
+
+  it("defaults the Langfuse tracing environment to local", () => {
+    expect(loadServerEnv({
+      ...baseEnv,
+      ...realAgentEnv,
+      ...langfuseEnv,
+    }).LANGFUSE_TRACING_ENVIRONMENT).toBe("local");
   });
 });

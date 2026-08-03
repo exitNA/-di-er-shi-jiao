@@ -79,6 +79,6 @@ app.prepare().then(() => {
     logger.info('  llm={value}', { value: Boolean(process.env.LLM_API_KEY) });
     logger.info('  tavily={value}', { value: Boolean(process.env.TAVILY_API_KEY) });
     logger.info('  trigger={value}', { value: Boolean(process.env.TRIGGER_SECRET_KEY) });
-    logger.info('  telemetry={value}', { value: Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT) });
+    logger.info('  langfuse=enabled');
   });
 });

@@ -195,19 +195,20 @@ pnpm exec trigger.dev deploy
 状态冲突返回 `409`。成功响应是最新工作空间快照。操作前后读取 `GET /api/analyses/<workspaceId>`，
 确认新 run 的状态与已完成模块版本没有回退。所有恢复都通过 Agent run 生命周期执行。
 
-## 8. 安全日志与 OpenTelemetry
+## 8. 安全日志与 Langfuse
 
 结构化日志只允许记录 `workspaceId`、`agentRunId`、`operation`、`errorCode`、`durationMs`、`attempt` 等运行元数据。不得记录完整原文、用户名、密码、认证会话令牌、prompt、模型 response、API key 或任意未经筛选的异常对象。
 
-启用 OTLP/HTTP trace 导出：
+详细的原文、prompt、模型输入输出和工具结果只写入本地 Langfuse observation。配置应用连接：
 
 ```dotenv
-OTEL_EXPORTER_OTLP_ENDPOINT=http://<otel-collector>:4318/v1/traces
+LANGFUSE_BASE_URL=http://localhost:3000
+LANGFUSE_PUBLIC_KEY=<local-public-key>
+LANGFUSE_SECRET_KEY=<local-secret-key>
+LANGFUSE_TRACING_ENVIRONMENT=local
 ```
 
-重启 Web 应用和 Trigger.dev 任务后，确认服务名为 `second-perspective`，并能看到
-`analysis.job`、`analysis.expert`、`analysis.synthesis`、`analysis.review`、
-`search.request`、`llm.generate` spans。Span 属性同样不得附带原文或模型输入输出。
+重启 Web 应用和 Trigger.dev 任务后，在 Langfuse 中确认同一次分析的 observation 共享 trace，且完整输入输出不会进入结构化日志或前端 SSE。
 
 告警至少覆盖：任务 `recoverable`、信源降级率、专家成功率、首模块 P95、完整报告 P95 和估算 token 成本。
 

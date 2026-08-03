@@ -16,7 +16,10 @@ const schema = z
     ),
     TRIGGER_SECRET_KEY: z.string().min(1).optional(),
     TRIGGER_PROJECT_REF: z.string().min(1).optional(),
-    OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+    LANGFUSE_BASE_URL: z.string().url(),
+    LANGFUSE_PUBLIC_KEY: z.string().min(1),
+    LANGFUSE_SECRET_KEY: z.string().min(1),
+    LANGFUSE_TRACING_ENVIRONMENT: z.literal("local").default("local"),
     LLM_INPUT_USD_PER_MILLION: z.coerce.number().nonnegative().default(0),
     LLM_OUTPUT_USD_PER_MILLION: z.coerce.number().nonnegative().default(0),
   })

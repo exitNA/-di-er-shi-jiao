@@ -13,6 +13,9 @@ const baseEnv = {
   LLM_API_KEY: "test-key",
   LLM_MODEL_ID: "test-model",
   TAVILY_API_KEY: "test-tavily-key",
+  LANGFUSE_BASE_URL: "http://localhost:3000",
+  LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+  LANGFUSE_SECRET_KEY: "sk-lf-test",
 } as const;
 const realServiceKeys = [
   "LLM_BASE_URL",
