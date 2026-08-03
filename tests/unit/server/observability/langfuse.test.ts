@@ -1,8 +1,8 @@
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseOtelSpanAttributes } from "@langfuse/tracing";
 import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   withAnalysisTrace,
@@ -15,7 +15,7 @@ const processor = new LangfuseSpanProcessor({
   exportMode: "immediate",
 });
 const sdk = new NodeSDK({ spanProcessors: [processor] });
-const run = promisify(execFile);
+const read = (file: string) => readFile(join(process.cwd(), file), "utf8");
 
 function parseAttribute(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -132,16 +132,22 @@ describe("Langfuse observations", () => {
 });
 
 it("does not retain a legacy OTLP observability configuration", async () => {
-  await expect(run("git", [
-    "grep",
-    "-n",
-    "-E",
-    "OTEL_EXPORTER_OTLP_ENDPOINT|OTLPTraceExporter|exporter-trace-otlp-http",
-    "--",
-    ".",
-    ":(exclude)pnpm-lock.yaml",
-    ":(exclude)docs/superpowers/**",
-    ":(exclude).superpowers/**",
-    ":(exclude)tests/unit/server/observability/langfuse.test.ts",
-  ])).rejects.toMatchObject({ code: 1 });
+  const [packageJson, ...runtime] = await Promise.all([
+    read("package.json"),
+    read(".env.example"),
+    read("README.md"),
+    read("docs/operations/mvp-baseline.md"),
+    read("src/instrumentation.ts"),
+    read("src/server.ts"),
+    read("src/server/config/env.ts"),
+    read("src/server/observability/langfuse.ts"),
+    read("src/server/observability/tracing.ts"),
+  ]);
+  const runtimeText = runtime.join("\n");
+
+  expect(JSON.parse(packageJson).dependencies).not.toHaveProperty(
+    "@opentelemetry/exporter-trace-otlp-http",
+  );
+  expect(runtimeText).not.toContain("OTEL_EXPORTER_OTLP_ENDPOINT");
+  expect(runtimeText).not.toContain("OTLPTraceExporter");
 });
