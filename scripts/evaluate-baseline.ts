@@ -106,16 +106,16 @@ function createRealExpertSuite(): ExpertSuite {
   };
   const argumentExpert = createArgumentExpert(createExpertSession);
   const perspectivesExpert = createPerspectivesExpert(createExpertSession);
-  const sourcesExpert = createSourcesExpert(createExpertSession);
   const risksExpert = createRisksExpert(createExpertSession);
   const synthesisExpert = createSynthesisExpert(createExpertSession);
   const searchTool = env.TAVILY_API_KEY
     ? new TavilySearchClient({ apiKey: env.TAVILY_API_KEY })
     : undefined;
+  const sourcesExpert = createSourcesExpert(createExpertSession, searchTool);
   return {
     analyzeArgument: (input) => analyzeArgument(argumentExpert, input),
     mapPerspectives: (input) => mapPerspectives(perspectivesExpert.mapPerspectives, input),
-    researchSources: (input) => researchSources(sourcesExpert, searchTool, input),
+    researchSources: (input) => researchSources(sourcesExpert, input),
     reviewRisks: (input) => reviewRisks(risksExpert, input),
     synthesize: (input) => synthesize(synthesisExpert.synthesize, input),
     reviewDraft: (input) => reviewDraft(perspectivesExpert.reviewDraft, input),
