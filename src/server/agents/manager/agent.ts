@@ -113,7 +113,7 @@ export class ManagerAgentRuntime {
         kind: context.kind,
         material: context.material,
       },
-      () => withLangfuseObservation(
+      (analysisObservation) => withLangfuseObservation(
         {
           name: "manager",
           asType: "agent",
@@ -124,7 +124,15 @@ export class ManagerAgentRuntime {
           },
           metadata: { agentId: "manager" },
         },
-        () => this.runAuthorized(input, context, prompt),
+        async (managerObservation) => {
+          const result = await this.runAuthorized(input, context, prompt);
+          if (result.status === "interrupted") {
+            const warning = { level: "WARNING", statusMessage: "interrupted" } as const;
+            analysisObservation.update(warning);
+            managerObservation.update(warning);
+          }
+          return result;
+        },
       ),
     );
   }

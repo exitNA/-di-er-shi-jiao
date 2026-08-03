@@ -4,7 +4,9 @@ import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analy
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
+  flushLangfuseTracing: vi.fn(),
   getContainer: vi.fn(),
+  startLangfuseTracing: vi.fn(),
   trigger: vi.fn(),
 }));
 
@@ -15,6 +17,10 @@ vi.mock("@trigger.dev/sdk", () => ({
 }));
 vi.mock("@/server/container", () => ({
   getContainer: mocks.getContainer,
+}));
+vi.mock("@/server/observability/tracing", () => ({
+  flushLangfuseTracing: mocks.flushLangfuseTracing,
+  startLangfuseTracing: mocks.startLangfuseTracing,
 }));
 
 import { runAgentTask } from "@/trigger/run-agent";
@@ -47,6 +53,11 @@ describe("TriggerAnalysisDispatcher", () => {
 });
 
 describe("runAgentTask", () => {
+  beforeEach(() => {
+    mocks.startLangfuseTracing.mockResolvedValue(undefined);
+    mocks.flushLangfuseTracing.mockResolvedValue(undefined);
+  });
+
   it("passes Trigger cancellation into the Agent runtime", async () => {
     const signal = new AbortController().signal;
     const repository = {
@@ -79,6 +90,32 @@ describe("runAgentTask", () => {
     expect(repository.finishAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       status: "completed",
     }));
+  });
+
+  it("isolates and flushes Langfuse before constructing the Trigger runtime", async () => {
+    const calls: string[] = [];
+    mocks.startLangfuseTracing.mockImplementation(async () => { calls.push("tracing"); });
+    mocks.getContainer.mockImplementation(() => {
+      calls.push("container");
+      return {
+        analysisRepository: {
+          getJobForExecution: vi.fn().mockResolvedValue(undefined),
+        },
+        workspaceAgentRuntime: { run: vi.fn() },
+      };
+    });
+
+    await runAgentTask.run(
+      { workspaceId: "workspace-1", agentRunId: "agent-run-1" },
+      {
+        ctx: { run: { id: "trigger-run-1" } },
+        signal: new AbortController().signal,
+      } as never,
+    );
+
+    expect(calls).toEqual(["tracing", "container"]);
+    expect(mocks.startLangfuseTracing).toHaveBeenCalledWith({ isolated: true });
+    expect(mocks.flushLangfuseTracing).toHaveBeenCalledOnce();
   });
 });
 

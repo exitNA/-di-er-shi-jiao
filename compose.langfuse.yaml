@@ -4,6 +4,12 @@ services:
   langfuse-worker:
     image: docker.io/langfuse/langfuse-worker:4
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$$(hostname):3030/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     depends_on: &langfuse-depends-on
       postgres:
         condition: service_healthy
@@ -42,6 +48,12 @@ services:
   langfuse-web:
     image: docker.io/langfuse/langfuse:4
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$$(hostname):3000/api/public/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     depends_on: *langfuse-depends-on
     ports:
       - "127.0.0.1:3000:3000"

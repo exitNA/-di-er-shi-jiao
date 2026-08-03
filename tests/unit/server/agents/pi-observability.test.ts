@@ -1,4 +1,7 @@
+// @vitest-environment node
+
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -16,7 +19,10 @@ import {
   type ManagerAgentContextRepository,
 } from "@/server/agents/manager/agent";
 import { createExpertHarness } from "@/server/agents/shared/expert-harness";
-import { createPiSession } from "@/server/agents/shared/pi-session";
+import {
+  createPiSession,
+  createProjectPiModelRuntime,
+} from "@/server/agents/shared/pi-session";
 
 const exporter = new tracing.InMemorySpanExporter();
 const processor = new LangfuseSpanProcessor({ exporter, exportMode: "immediate" });
@@ -134,9 +140,10 @@ describe("Pi observability", () => {
       const recorded = observations();
       const analysis = recorded.find(({ name }) => name === "analysis.baseline");
       const manager = recorded.find(({ name }) => name === "manager");
-      const managerGeneration = recorded.find(({ name, parentSpanId }) =>
+      const managerGenerations = recorded.filter(({ name, parentSpanId }) =>
         name === "pi.generation" && parentSpanId === manager?.spanId
       );
+      const managerGeneration = managerGenerations[0];
       const expertObservation = recorded.find(({ name }) => name === "expert.argument");
       const expertGeneration = recorded.find(({ name, parentSpanId }) =>
         name === "pi.generation" && parentSpanId === expertObservation?.spanId
@@ -154,6 +161,17 @@ describe("Pi observability", () => {
           toolResults: [expect.objectContaining({ toolName: "delegate_expert" })],
         }),
       }));
+      expect(managerGenerations).toHaveLength(2);
+      expect(managerGenerations[0]?.input).toEqual(expect.objectContaining({
+        systemPrompt: expect.any(String),
+        messages: [expect.objectContaining({ role: "user" })],
+      }));
+      expect(managerGenerations[1]?.input).toEqual(expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: "assistant" }),
+          expect.objectContaining({ role: "toolResult" }),
+        ]),
+      }));
       expect(expertObservation).toEqual(expect.objectContaining({
         type: "agent",
         traceId: analysis?.traceId,
@@ -164,9 +182,13 @@ describe("Pi observability", () => {
         traceId: analysis?.traceId,
         input: {
           systemPrompt: "完整专家 system prompt",
-          messages: [{ role: "user", content: "完整专家请求" }],
+          messages: [expect.objectContaining({
+            role: "user",
+            content: [{ type: "text", text: "完整专家请求" }],
+          })],
         },
         output: expect.objectContaining({
+          assistant: expect.objectContaining({ stopReason: "toolUse" }),
           toolResults: [expect.objectContaining({ toolName: "complete" })],
         }),
         model: "observed-model",
@@ -220,7 +242,7 @@ describe("Pi observability", () => {
       level: "WARNING",
       statusMessage: "request cancelled",
       output: expect.objectContaining({
-        assistant: [expect.objectContaining({ stopReason: "aborted" })],
+        assistant: expect.objectContaining({ stopReason: "aborted" }),
       }),
     }));
   });
@@ -251,9 +273,73 @@ describe("Pi observability", () => {
       level: "ERROR",
       statusMessage: "provider unavailable",
       output: expect.objectContaining({
-        assistant: [expect.objectContaining({ stopReason: "error" })],
+        assistant: expect.objectContaining({ stopReason: "error" }),
       }),
     }));
+  });
+
+  it("uses production model prices to record a nonzero generation cost", async () => {
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end([
+        `data: ${JSON.stringify({
+          id: "chatcmpl-priced",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "priced-model",
+          choices: [{ index: 0, delta: { role: "assistant", content: "priced" }, finish_reason: null }],
+        })}\n\n`,
+        `data: ${JSON.stringify({
+          id: "chatcmpl-priced",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "priced-model",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+        })}\n\n`,
+        "data: [DONE]\n\n",
+      ].join(""));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Expected test server address");
+
+    try {
+      const { model, modelRuntime } = await createProjectPiModelRuntime({
+        apiKey: "test-key",
+        baseURL: `http://127.0.0.1:${address.port}/v1`,
+        modelId: "priced-model",
+        inputUsdPerMillion: 2,
+        outputUsdPerMillion: 4,
+      });
+      const session = await createPiSession({
+        systemPrompt: "priced system prompt",
+        customTools: [],
+        model,
+        modelRuntime,
+        resourceDir: path.join(process.cwd(), "src/server/agents/manager"),
+      });
+
+      await session.prompt("priced request");
+      session.dispose();
+      await processor.forceFlush();
+
+      expect(model.cost).toEqual(expect.objectContaining({ input: 2, output: 4 }));
+      expect(observations()).toContainEqual(expect.objectContaining({
+        name: "pi.generation",
+        model: "priced-model",
+        usageDetails: expect.objectContaining({ input: 10, output: 5, total: 15 }),
+        costDetails: expect.objectContaining({ total: expect.any(Number) }),
+      }));
+      const generation = observations().find(({ model: observedModel }) =>
+        observedModel === "priced-model"
+      );
+      expect((generation?.costDetails as { total?: number })?.total).toBeGreaterThan(0);
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close((error) =>
+        error ? reject(error) : resolve()
+      ));
+    }
   });
 });
 

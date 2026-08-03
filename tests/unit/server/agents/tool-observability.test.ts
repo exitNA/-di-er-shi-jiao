@@ -4,11 +4,11 @@ import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSourceSearchTool } from "@/server/agents/sources/tools/search";
-import {
-  WorkspaceToolExecutor,
-  type AgentToolResult,
-} from "@/server/agents/workspace-tool-executor";
+import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
+import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
+import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
 import { withAnalysisTrace } from "@/server/observability/langfuse";
+import { createStubExpertSuite } from "../../../helpers/stub-expert-suite";
 
 const exporter = new tracing.InMemorySpanExporter();
 const processor = new LangfuseSpanProcessor({ exporter, exportMode: "immediate" });
@@ -85,26 +85,24 @@ describe("agent tool observability", () => {
     }));
   });
 
-  it("records expert and report action inputs and actual executor results", async () => {
-    const executor = Object.create(WorkspaceToolExecutor.prototype) as WorkspaceToolExecutor;
-    const results: AgentToolResult[] = [
-      { ok: true, summary: "argument completed" },
-      { ok: true, summary: "report published" },
-    ];
-    vi.spyOn(executor, "execute")
-      .mockResolvedValueOnce(results[0])
-      .mockResolvedValueOnce(results[1]);
+  it("marks recovered production failures as errors and records persisted versions", async () => {
+    const success = productionExecutor();
+    const failure = productionExecutor(new Error("provider exploded"));
 
     await withAnalysisTrace(
       { workspaceId: "w1", userId: "u1", kind: "baseline", material: "原始材料" },
       async () => {
-        await executor.runExpert({
+        await success.executor.runExpert({
           workspaceId: "w1",
           agentRunId: "r1",
           expert: "argument",
-          task: "核对论证",
         });
-        await executor.runReportAction({
+        await failure.executor.runExpert({
+          workspaceId: "w1",
+          agentRunId: "r1",
+          expert: "argument",
+        });
+        await success.executor.runReportAction({
           workspaceId: "w1",
           agentRunId: "r1",
           action: "publish_report",
@@ -113,79 +111,31 @@ describe("agent tool observability", () => {
     );
     await processor.forceFlush();
 
-    const recorded = observations();
-    const analysis = recorded.find(({ name }) => name === "analysis.baseline");
-    const argument = recorded.find(({ name }) => name === "workspace.analyze_argument");
-    const publication = recorded.find(({ name }) => name === "workspace.publish_report");
-
-    expect(recorded).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: "workspace.analyze_argument",
-        asType: "tool",
-        input: {
-          workspaceId: "w1",
-          agentRunId: "r1",
-          expert: "argument",
-          task: "核对论证",
-        },
-        output: results[0],
-      }),
-      expect.objectContaining({
-        name: "workspace.publish_report",
-        asType: "tool",
-        input: {
-          workspaceId: "w1",
-          agentRunId: "r1",
-          action: "publish_report",
-        },
-        output: results[1],
-      }),
-    ]));
-    expect([argument, publication]).toEqual([
-      expect.objectContaining({ traceId: analysis?.traceId, parentSpanId: analysis?.spanId }),
-      expect.objectContaining({ traceId: analysis?.traceId, parentSpanId: analysis?.spanId }),
-    ]);
-  });
-
-  it("records and rethrows expert and report executor errors", async () => {
-    const executor = Object.create(WorkspaceToolExecutor.prototype) as WorkspaceToolExecutor;
-    vi.spyOn(executor, "execute")
-      .mockRejectedValueOnce(new Error("expert execution failed"))
-      .mockRejectedValueOnce(new Error("report execution failed"));
-
-    await withAnalysisTrace(
-      { workspaceId: "w1", userId: "u1", kind: "baseline", material: "原始材料" },
-      async () => {
-        await expect(executor.runExpert({
-          workspaceId: "w1",
-          agentRunId: "r1",
-          expert: "argument",
-        })).rejects.toThrow("expert execution failed");
-        await expect(executor.runReportAction({
-          workspaceId: "w1",
-          agentRunId: "r1",
-          action: "publish_report",
-        })).rejects.toThrow("report execution failed");
-      },
-    );
-    await processor.forceFlush();
-
-    expect(observations()).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: "workspace.analyze_argument",
-        asType: "tool",
-        level: "ERROR",
-        statusMessage: "expert execution failed",
-        output: { error: "expert execution failed" },
-      }),
-      expect.objectContaining({
-        name: "workspace.publish_report",
-        asType: "tool",
-        level: "ERROR",
-        statusMessage: "report execution failed",
-        output: { error: "report execution failed" },
-      }),
-    ]));
+    expect(success.persistedArtifact).toEqual({
+      kind: "baseline_module",
+      moduleType: "argument",
+      outputVersion: 1,
+    });
+    expect(observations().filter(({ name }) => name === "workspace.analyze_argument"))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          output: expect.objectContaining({
+            ok: true,
+            artifact: success.persistedArtifact,
+          }),
+        }),
+        expect.objectContaining({
+          level: "ERROR",
+          statusMessage: "EXPERT_FAILED",
+          output: { ok: false, code: "EXPERT_FAILED" },
+        }),
+      ]));
+    expect(observations()).toContainEqual(expect.objectContaining({
+      name: "workspace.publish_report",
+      level: "ERROR",
+      statusMessage: "REQUIRED_TOOL_UNAVAILABLE",
+      output: { ok: false, code: "REQUIRED_TOOL_UNAVAILABLE" },
+    }));
   });
 
   it("records and rethrows source search errors", async () => {
@@ -207,3 +157,80 @@ describe("agent tool observability", () => {
     }));
   });
 });
+
+function productionExecutor(error?: Error) {
+  const snapshot: AnalysisSnapshot = {
+    workspaceId: "w1",
+    reportId: "report-1",
+    currentVersion: 0,
+    status: "running",
+    configVersion: "agent-v1",
+    materialPreview: "原始材料",
+    createdAt: "2026-08-02T00:00:00.000Z",
+    updatedAt: "2026-08-02T00:00:00.000Z",
+    lastEventId: 0,
+    activeRun: {
+      id: "r1",
+      workspaceId: "w1",
+      kind: "baseline",
+      status: "running",
+      configVersion: "agent-v1",
+      cancellationRequestedAt: null,
+      startedAt: "2026-08-02T00:00:00.000Z",
+      completedAt: null,
+    },
+    toolCalls: [],
+    messages: [],
+    revisions: [],
+    modules: {
+      overview: { status: "queued", version: 0 },
+      argument: { status: "queued", version: 0 },
+      perspectives: { status: "queued", version: 0 },
+      sources: { status: "queued", version: 0 },
+      risks: { status: "queued", version: 0 },
+      reflection: { status: "queued", version: 0 },
+    },
+  };
+  let persistedArtifact: unknown;
+  const repository = {
+    async getJobForExecution() {
+      return {
+        jobId: "w1",
+        userId: "u1",
+        reportId: "report-1",
+        material: "原始材料",
+        detectedLanguage: "zh" as const,
+        status: "running" as const,
+        configVersion: "agent-v1",
+      };
+    },
+    async getOwnedSnapshot() { return snapshot; },
+    async appendAgentToolCall() { return { id: "call-1" }; },
+    async appendEvent() { return 1; },
+    async startExpertRun() { return "expert-run-1"; },
+    async finishExpertRun() {},
+    async saveModule(input: { status: string; payload?: unknown; nextVersion: number }) {
+      if (input.status === "completed") {
+        snapshot.modules.argument = {
+          status: "completed",
+          version: input.nextVersion,
+          payload: input.payload,
+        };
+      }
+      return true;
+    },
+    async saveAgentToolArtifact(input: { artifact: unknown }) {
+      persistedArtifact = input.artifact;
+      return true;
+    },
+    async listPersistedAgentToolArtifacts() { return []; },
+    async finishAgentToolCall() { return true; },
+  } as unknown as AnalysisRepository;
+  const experts = createStubExpertSuite(error
+    ? { async analyzeArgument() { throw error; } }
+    : undefined);
+  return {
+    executor: new WorkspaceToolExecutor(experts, repository),
+    get persistedArtifact() { return persistedArtifact; },
+  };
+}

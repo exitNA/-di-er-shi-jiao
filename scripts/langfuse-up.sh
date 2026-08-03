@@ -17,4 +17,4 @@ test -f .env.langfuse.local || {
   printf 'LANGFUSE_INIT_USER_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> .env.langfuse.local
 }
 
-docker compose --env-file .env.langfuse.local -f compose.langfuse.yaml up -d --wait
+docker compose --env-file .env.langfuse.local -f compose.langfuse.yaml up -d --wait --wait-timeout 180

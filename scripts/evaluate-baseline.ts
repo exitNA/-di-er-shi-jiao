@@ -99,6 +99,8 @@ function createRealExpertSuite(): ExpertSuite {
     baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
     modelId: env.LLM_MODEL_ID,
+    inputUsdPerMillion: env.LLM_INPUT_USD_PER_MILLION,
+    outputUsdPerMillion: env.LLM_OUTPUT_USD_PER_MILLION,
   });
   const createExpertSession: ExpertSessionFactory = async (input) => {
     const { model, modelRuntime } = await piRuntime;

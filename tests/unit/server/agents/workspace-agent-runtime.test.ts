@@ -125,6 +125,15 @@ describe("ManagerAgentRuntime", () => {
       runtime.run({ workspaceId, agentRunId, signal: controller.signal }),
     ).resolves.toEqual({ status: "interrupted" });
     expect(session.abort).toHaveBeenCalledOnce();
+    await processor.forceFlush();
+    const interrupted = exporter.getFinishedSpans().filter((span) =>
+      span.name === "manager" || span.name === "analysis.baseline"
+    );
+    expect(interrupted).toHaveLength(2);
+    expect(interrupted.every((span) =>
+      span.attributes[LangfuseOtelSpanAttributes.OBSERVATION_LEVEL] === "WARNING"
+      && span.attributes[LangfuseOtelSpanAttributes.OBSERVATION_STATUS_MESSAGE] === "interrupted"
+    )).toBe(true);
   });
 
   it("rejects a baseline run when the model stops before publishing a valid report", async () => {

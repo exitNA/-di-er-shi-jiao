@@ -1,4 +1,5 @@
 import "server-only";
+import { context, ROOT_CONTEXT } from "@opentelemetry/api";
 import {
   propagateAttributes,
   startActiveObservation,
@@ -34,19 +35,21 @@ export async function withLangfuseObservation<T>(
   run: (observation: ObservationHandle) => Promise<T>,
 ): Promise<T> {
   const observe = async (observation: SupportedObservation): Promise<T> => {
+    let outputUpdated = false;
     observation.update({
       input: input.input,
       metadata: input.metadata,
     });
     const handle: ObservationHandle = {
       update: (attributes) => {
+        if (Object.hasOwn(attributes, "output")) outputUpdated = true;
         observation.update(attributes as LangfuseObservationAttributes);
       },
     };
 
     try {
       const result = await run(handle);
-      if (result !== undefined) observation.update({ output: result });
+      if (result !== undefined && !outputUpdated) observation.update({ output: result });
       return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -80,22 +83,25 @@ export async function withAnalysisTrace<T>(
     kind: "baseline" | "challenge";
     material: string;
   },
-  run: () => Promise<T>,
+  run: (observation: ObservationHandle) => Promise<T>,
 ): Promise<T> {
   const name = `analysis.${input.kind}`;
-  return propagateAttributes(
-    {
-      traceName: name,
-      userId: input.userId,
-      sessionId: input.workspaceId,
-      metadata: {
-        kind: input.kind,
-        workspaceId: input.workspaceId,
+  return context.with(
+    ROOT_CONTEXT,
+    () => propagateAttributes(
+      {
+        traceName: name,
+        userId: input.userId,
+        sessionId: input.workspaceId,
+        metadata: {
+          kind: input.kind,
+          workspaceId: input.workspaceId,
+        },
       },
-    },
-    () => withLangfuseObservation(
-      { name, asType: "chain", input: { material: input.material } },
-      run,
+      () => withLangfuseObservation(
+        { name, asType: "chain", input: { material: input.material } },
+        run,
+      ),
     ),
   );
 }

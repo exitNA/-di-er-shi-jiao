@@ -138,25 +138,56 @@ export class WorkspaceToolExecutor {
     const toolName = toolNames[input.expert];
     return withLangfuseObservation(
       { name: `workspace.${toolName}`, asType: "tool", input },
-      () => input.task && input.task.length > 2_000
-        ? Promise.resolve({ ok: false, code: "INVALID_EXPERT_TASK" })
-        : this.execute(toolName, input),
+      async (observation) => {
+        const execution = input.task && input.task.length > 2_000
+          ? { result: { ok: false as const, code: "INVALID_EXPERT_TASK" } }
+          : await this.executeDetailed(toolName, input);
+        observation.update({
+          output: {
+            ...execution.result,
+            ...(execution.artifact ? { artifact: execution.artifact } : {}),
+          },
+          ...(!execution.result.ok
+            ? { level: "ERROR", statusMessage: execution.result.code }
+            : {}),
+        });
+        return execution.result;
+      },
     );
   }
 
   runReportAction(input: RunReportActionInput): Promise<AgentToolResult> {
     return withLangfuseObservation(
       { name: `workspace.${input.action}`, asType: "tool", input },
-      () => this.execute(input.action, input),
+      async (observation) => {
+        const execution = await this.executeDetailed(input.action, input);
+        observation.update({
+          output: {
+            ...execution.result,
+            ...(execution.artifact ? { artifact: execution.artifact } : {}),
+          },
+          ...(!execution.result.ok
+            ? { level: "ERROR", statusMessage: execution.result.code }
+            : {}),
+        });
+        return execution.result;
+      },
     );
   }
 
   async execute(name: WorkspaceToolName, context: WorkspaceExecutionContext): Promise<AgentToolResult> {
+    return (await this.executeDetailed(name, context)).result;
+  }
+
+  private async executeDetailed(
+    name: WorkspaceToolName,
+    context: WorkspaceExecutionContext,
+  ): Promise<ToolExecution> {
     const owned = await this.assertRunnable(context);
     if (
       (owned.snapshot.activeRun?.kind === "challenge")
       !== (name === "review_target")
-    ) return { ok: false, code: "TOOL_NOT_ALLOWED" };
+    ) return failure("TOOL_NOT_ALLOWED");
     const call = await this.repository.appendAgentToolCall({
       workspaceId: context.workspaceId,
       userId: owned.job.userId,
@@ -165,12 +196,12 @@ export class WorkspaceToolExecutor {
       summary: statusSummary(name),
       now: this.now(),
     });
-    if (!call) return { ok: false, code: "AGENT_RUN_UNAVAILABLE" };
-    if ("code" in call) return { ok: false, code: call.code };
+    if (!call) return failure("AGENT_RUN_UNAVAILABLE");
+    if ("code" in call) return failure(call.code);
 
     try {
       const execution = await this.runValidatedTool(name, context, owned.job.userId, call.id);
-      if (execution.toolCallFinished) return execution.result;
+      if (execution.toolCallFinished) return execution;
       if (execution.artifact) {
         const artifactSaved = await this.repository.saveAgentToolArtifact({
           workspaceId: context.workspaceId,
@@ -179,7 +210,7 @@ export class WorkspaceToolExecutor {
           id: call.id,
           artifact: execution.artifact,
         });
-        if (!artifactSaved) return { ok: false, code: "AGENT_RUN_INTERRUPTED" };
+        if (!artifactSaved) return failure("AGENT_RUN_INTERRUPTED");
       }
       const finished = await this.repository.finishAgentToolCall({
         workspaceId: context.workspaceId,
@@ -192,7 +223,7 @@ export class WorkspaceToolExecutor {
         ...(execution.artifact ? { artifact: execution.artifact } : {}),
         now: this.now(),
       });
-      return finished ? execution.result : { ok: false, code: "AGENT_RUN_INTERRUPTED" };
+      return finished ? execution : failure("AGENT_RUN_INTERRUPTED");
     } catch (error) {
       const code = errorCode(error);
       const baselineModule = baselineToolModules.find((candidate) => candidate.toolName === name);
@@ -221,7 +252,7 @@ export class WorkspaceToolExecutor {
         errorCode: code,
         now: this.now(),
       });
-      return { ok: false, code };
+      return failure(code);
     }
   }
 
