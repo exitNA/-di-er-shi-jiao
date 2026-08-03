@@ -20,6 +20,7 @@ import {
 
 export type ExpertInput = {
   material: string;
+  task?: string;
   factualOnly?: boolean;
   abortSignal?: AbortSignal;
 };

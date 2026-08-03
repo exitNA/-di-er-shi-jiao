@@ -7,7 +7,7 @@ import {
   expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
-import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
+import { loadPromptTemplate, sourceMaterial, systemInstruction, withDelegatedTask } from "../shared/prompt";
 
 const risksSystemInstruction = systemInstruction(loadPromptTemplate("risks/prompts/system"));
 
@@ -28,7 +28,7 @@ export async function reviewRisks(
   const generated = await harness.run({
     operation: "risks",
     systemPrompt: risksSystemInstruction,
-    prompt: risksPrompt(input.material),
+    prompt: withDelegatedTask(risksPrompt(input.material), input.task),
     abortSignal: input.abortSignal,
   });
 

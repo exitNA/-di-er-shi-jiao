@@ -7,7 +7,7 @@ import {
   expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
-import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
+import { loadPromptTemplate, sourceMaterial, systemInstruction, withDelegatedTask } from "../shared/prompt";
 
 const argumentSystemInstruction = systemInstruction(loadPromptTemplate("argument/prompts/system"));
 const factualArgumentSystemInstruction = systemInstruction(loadPromptTemplate("argument/prompts/factual-system"));
@@ -26,7 +26,7 @@ export function analyzeArgument(harness: ExpertHarness<ArgumentModule>, input: E
   return harness.run({
     operation: "argument",
     systemPrompt: input.factualOnly ? factualArgumentSystemInstruction : argumentSystemInstruction,
-    prompt: argumentPrompt(input.material),
+    prompt: withDelegatedTask(argumentPrompt(input.material), input.task),
     abortSignal: input.abortSignal,
   });
 }

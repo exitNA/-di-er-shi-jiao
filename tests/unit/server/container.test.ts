@@ -9,7 +9,6 @@ const baseEnv = {
   APP_URL: "http://127.0.0.1:3000",
   DATABASE_URL: "postgres://app:app@127.0.0.1:54329/second_perspective",
   AUTH_SECRET: "test-auth-secret-that-is-at-least-32-bytes",
-  AGENT_ADAPTER: "openai-compatible",
   LLM_BASE_URL: "https://llm.example/v1",
   LLM_API_KEY: "test-key",
   LLM_MODEL_ID: "test-model",

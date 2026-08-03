@@ -6,7 +6,6 @@ const schema = z
     APP_URL: z.string().url(),
     DATABASE_URL: z.string().url(),
     AUTH_SECRET: z.string().min(32),
-    AGENT_ADAPTER: z.literal("openai-compatible"),
     ANALYSIS_RUNTIME: z.enum(["in-process", "trigger"]).default("in-process"),
     LLM_BASE_URL: z.string().url(),
     LLM_API_KEY: z.string().min(1),

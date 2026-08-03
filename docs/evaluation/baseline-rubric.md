@@ -2,7 +2,7 @@
 
 ## 运行与产物
 
-在配置真实 `openai-compatible` 适配器后运行：
+在配置真实 `LLM_*` 模型连接后运行：
 
 ```bash
 pnpm eval:run

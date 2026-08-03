@@ -18,6 +18,12 @@ export function sourceMaterial(material: string): string {
   return `<source_material>${escapeBoundaryText(material)}</source_material>`;
 }
 
+export function withDelegatedTask(prompt: string, task?: string): string {
+  return task
+    ? `${prompt}\n\n<delegated_task>${escapeBoundaryText(task)}</delegated_task>`
+    : prompt;
+}
+
 export function externalSource(input: { id: string; title: string; url: string; domain: string; content: string }): string {
   return `<external_source id="${escapeAttribute(input.id)}" title="${escapeAttribute(input.title)}" url="${escapeAttribute(input.url)}" domain="${escapeAttribute(input.domain)}">${escapeBoundaryText(input.content)}</external_source>`;
 }

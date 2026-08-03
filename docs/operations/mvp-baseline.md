@@ -57,7 +57,6 @@ dropdb second_perspective_restore_check
 APP_URL=http://localhost:5000
 DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective
 AUTH_SECRET=<openssl-rand-hex-32-output>
-AGENT_ADAPTER=openai-compatible
 ANALYSIS_RUNTIME=in-process
 LLM_BASE_URL=https://<provider-host>/v1
 LLM_API_KEY=<secret>
@@ -80,11 +79,10 @@ pnpm dev
 
 ## 4. 真实前台 Agent 与 Tavily
 
-生产环境唯一支持的适配器是 `openai-compatible`。前台 Agent 使用 OpenAI 兼容协议调用模型；
-配置 Tavily 时，联网搜索独立走 Tavily。把以下必填变量写入运行环境：
+服务端 Pi agent 使用 `LLM_*` 配置调用模型；配置 Tavily 时，联网搜索独立走 Tavily。
+把以下必填变量写入运行环境：
 
 ```dotenv
-AGENT_ADAPTER=openai-compatible
 LLM_BASE_URL=https://<provider-host>/v1
 LLM_API_KEY=<secret>
 LLM_MODEL_ID=<model-id>

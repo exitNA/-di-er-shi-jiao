@@ -12,7 +12,7 @@ import {
   expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
-import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
+import { loadPromptTemplate, sourceMaterial, systemInstruction, withDelegatedTask } from "../shared/prompt";
 import { createSourceSearchTool, type SourceCandidate } from "./tools/search";
 
 const sourcesSystemInstruction = systemInstruction(loadPromptTemplate("sources/prompts/system"));
@@ -57,7 +57,7 @@ export async function researchSources(
   const generated = await harness.run({
     operation: "sources",
     systemPrompt: sourcesSystemInstruction,
-    prompt: sourcesPrompt(input.material),
+    prompt: withDelegatedTask(sourcesPrompt(input.material), input.task),
     abortSignal: input.abortSignal,
   });
   return generated;

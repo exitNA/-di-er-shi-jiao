@@ -203,6 +203,21 @@ function setup(experts: ExpertSuite = createStubExpertSuite()) {
 }
 
 describe("WorkspaceToolExecutor", () => {
+  it("passes a targeted delegation task to the selected expert", async () => {
+    const base = createStubExpertSuite();
+    let receivedTask: string | undefined;
+    const { executor, context } = setup(createStubExpertSuite({
+      analyzeArgument(input) {
+        receivedTask = input.task;
+        return base.analyzeArgument(input);
+      },
+    }));
+
+    await executor.runExpert({ ...context, expert: "argument", task: "只核对因果跳跃" });
+
+    expect(receivedTask).toBe("只核对因果跳跃");
+  });
+
   it("uses predefined expert results without external services", async () => {
     const experts = createStubExpertSuite();
 

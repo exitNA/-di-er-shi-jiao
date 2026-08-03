@@ -12,7 +12,7 @@ import {
   expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
-import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
+import { loadPromptTemplate, sourceMaterial, systemInstruction, withDelegatedTask } from "../shared/prompt";
 
 const perspectivesSystemInstruction = systemInstruction(loadPromptTemplate("perspectives/prompts/system"));
 export const draftReviewSystemInstruction = systemInstruction(loadPromptTemplate("perspectives/prompts/draft-review"));
@@ -43,7 +43,7 @@ export function mapPerspectives(harness: ExpertHarness<PerspectivesModule>, inpu
   return harness.run({
     operation: "perspectives",
     systemPrompt: perspectivesSystemInstruction,
-    prompt: perspectivesPrompt(input.material),
+    prompt: withDelegatedTask(perspectivesPrompt(input.material), input.task),
     abortSignal: input.abortSignal,
   });
 }

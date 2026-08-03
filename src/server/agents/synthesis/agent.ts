@@ -21,7 +21,7 @@ import {
   expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
-import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
+import { loadPromptTemplate, sourceMaterial, systemInstruction, withDelegatedTask } from "../shared/prompt";
 
 const synthesisSystemInstruction = systemInstruction(loadPromptTemplate("synthesis/prompts/system"));
 const draftRevisionSystemInstruction = systemInstruction(loadPromptTemplate("synthesis/prompts/draft-revision"));
@@ -75,7 +75,7 @@ export function synthesize(
   return harness.run({
     operation: "synthesis",
     systemPrompt: synthesisSystemInstruction,
-    prompt: synthesisPrompt(input.material, expertOutputs(input)),
+    prompt: withDelegatedTask(synthesisPrompt(input.material, expertOutputs(input)), input.task),
     abortSignal: input.abortSignal,
   });
 }

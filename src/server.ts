@@ -73,7 +73,6 @@ app.prepare().then(() => {
       : 'not configured';
     logger.info('Startup config:');
     logger.info('  env={value}', { value: process.env.NODE_ENV ?? 'development' });
-    logger.info('  agent={value}', { value: process.env.AGENT_ADAPTER ?? 'unset' });
     logger.info('  runtime={value}', { value: process.env.ANALYSIS_RUNTIME ?? 'in-process' });
     logger.info('  database={value}', { value: databaseSummary });
     logger.info('  auth={value}', { value: Boolean(process.env.AUTH_SECRET) });

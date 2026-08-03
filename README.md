@@ -17,8 +17,8 @@ pnpm dev
 ```
 
 把 `openssl` 输出写入 `.env.local` 的 `AUTH_SECRET`，然后访问
-<http://localhost:5000/register>。运行需要真实的 OpenAI 兼容模型和 `DATABASE_URL`：
-配置 `AGENT_ADAPTER=openai-compatible`、`LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；
+<http://localhost:5000/register>。运行需要真实模型和 `DATABASE_URL`：
+配置 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；
 配置 `TAVILY_API_KEY` 后启用在线搜索。后台可使用 `in-process` 或 Trigger.dev。
 
 ## 集成测试

@@ -9,7 +9,6 @@ const baseEnv = {
   ANALYSIS_RUNTIME: "in-process",
 };
 const realAgentEnv = {
-  AGENT_ADAPTER: "openai-compatible",
   LLM_BASE_URL: "https://llm.example/v1",
   LLM_API_KEY: "test-key",
   LLM_MODEL_ID: "test-model",
@@ -17,18 +16,9 @@ const realAgentEnv = {
 } as const;
 
 describe("loadServerEnv", () => {
-  it("requires an explicit real Agent adapter", () => {
-    expect(() => loadServerEnv({ ...baseEnv, ...realAgentEnv, AGENT_ADAPTER: undefined }))
-      .toThrow(/AGENT_ADAPTER/);
-    expect(() => loadServerEnv({ ...baseEnv, ...realAgentEnv, AGENT_ADAPTER: "fake" })).toThrow(
-      /AGENT_ADAPTER/,
-    );
-  });
-
   it("requires the real Agent configuration in every environment", () => {
     expect(() => loadServerEnv({
       ...baseEnv,
-      AGENT_ADAPTER: "openai-compatible",
     })).toThrow(/LLM_BASE_URL/);
   });
 
@@ -36,7 +26,7 @@ describe("loadServerEnv", () => {
     expect(loadServerEnv({
       ...baseEnv,
       ...realAgentEnv,
-    }).AGENT_ADAPTER).toBe("openai-compatible");
+    }).LLM_MODEL_ID).toBe("test-model");
   });
 
   it("allows the real Agent configuration without online search", () => {

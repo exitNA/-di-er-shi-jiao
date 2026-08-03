@@ -18,7 +18,6 @@ it("loads required development settings from .env files without printing them", 
     "APP_URL=http://127.0.0.1:5000",
     "DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective_test",
     "AUTH_SECRET=local-development-auth-secret-at-least-32-bytes",
-    "AGENT_ADAPTER=openai-compatible",
     "LLM_BASE_URL=https://llm.example/v1",
     `LLM_API_KEY=${secret}`,
     "LLM_MODEL_ID=test-model",
@@ -26,7 +25,6 @@ it("loads required development settings from .env files without printing them", 
   ].join("\n"));
   await writeFile(join(bin, "pnpm"), `#!/bin/sh
 set -eu
-test "$AGENT_ADAPTER" = "openai-compatible"
 test "$LLM_API_KEY" = "${secret}"
 test "$ANALYSIS_RUNTIME" = "in-process"
 printf 'development environment loaded\\n'
@@ -41,7 +39,6 @@ printf 'development environment loaded\\n'
         APP_URL: "",
         DATABASE_URL: "",
         AUTH_SECRET: "",
-        AGENT_ADAPTER: "",
         LLM_BASE_URL: "",
         LLM_API_KEY: "",
         LLM_MODEL_ID: "",

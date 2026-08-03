@@ -87,6 +87,8 @@ export type RunReportActionInput = AgentToolContext & {
   action: ReportActionName;
 };
 
+type WorkspaceExecutionContext = AgentToolContext & { task?: string };
+
 type OwnedWorkspace = {
   job: ExecutionJob;
   snapshot: AnalysisSnapshot;
@@ -125,6 +127,9 @@ export class WorkspaceToolExecutor {
   ) {}
 
   runExpert(input: RunPeerExpertInput): Promise<AgentToolResult> {
+    if (input.task && input.task.length > 2_000) {
+      return Promise.resolve({ ok: false, code: "INVALID_EXPERT_TASK" });
+    }
     const toolNames: Record<PeerExpertName, WorkspaceToolName> = {
       argument: "analyze_argument",
       sources: "research_sources",
@@ -139,7 +144,7 @@ export class WorkspaceToolExecutor {
     return this.execute(input.action, input);
   }
 
-  async execute(name: WorkspaceToolName, context: AgentToolContext): Promise<AgentToolResult> {
+  async execute(name: WorkspaceToolName, context: WorkspaceExecutionContext): Promise<AgentToolResult> {
     const owned = await this.assertRunnable(context);
     if (
       (owned.snapshot.activeRun?.kind === "challenge")
@@ -232,7 +237,7 @@ export class WorkspaceToolExecutor {
 
   private async runValidatedTool(
     name: WorkspaceToolName,
-    context: AgentToolContext,
+    context: WorkspaceExecutionContext,
     userId: string,
     toolCallId: string,
   ): Promise<ToolExecution> {
@@ -246,7 +251,7 @@ export class WorkspaceToolExecutor {
           "argument",
           "baseline",
           current.version + 1,
-          () => this.experts.analyzeArgument({ material: owned.job.material, abortSignal: context.signal }),
+          () => this.experts.analyzeArgument({ material: owned.job.material, ...expertRequest(context) }),
         );
         const payload = argumentModuleSchema.parse(generated.value);
         await this.saveModule(owned, "argument", payload);
@@ -260,7 +265,7 @@ export class WorkspaceToolExecutor {
           "sources",
           "baseline",
           current.version + 1,
-          () => this.experts.researchSources({ material: owned.job.material, abortSignal: context.signal }),
+          () => this.experts.researchSources({ material: owned.job.material, ...expertRequest(context) }),
         );
         const payload = sourcesModuleSchema.parse(generated.value);
         await this.saveModule(owned, "sources", payload);
@@ -274,7 +279,7 @@ export class WorkspaceToolExecutor {
           "perspectives",
           "baseline",
           current.version + 1,
-          () => this.experts.mapPerspectives({ material: owned.job.material, abortSignal: context.signal }),
+          () => this.experts.mapPerspectives({ material: owned.job.material, ...expertRequest(context) }),
         );
         const payload = perspectivesModuleSchema.parse(generated.value);
         await this.saveModule(owned, "perspectives", payload);
@@ -288,7 +293,7 @@ export class WorkspaceToolExecutor {
           "risks",
           "baseline",
           current.version + 1,
-          () => this.experts.reviewRisks({ material: owned.job.material, abortSignal: context.signal }),
+          () => this.experts.reviewRisks({ material: owned.job.material, ...expertRequest(context) }),
         );
         const payload = risksModuleSchema.parse(generated.value);
         await this.saveModule(owned, "risks", payload);
@@ -307,7 +312,7 @@ export class WorkspaceToolExecutor {
     }
   }
 
-  private async synthesize(owned: OwnedWorkspace, context: AgentToolContext): Promise<ToolExecution> {
+  private async synthesize(owned: OwnedWorkspace, context: WorkspaceExecutionContext): Promise<ToolExecution> {
     const experts = independentOutputs(owned.snapshot);
     if (!experts) return failure("REQUIRED_TOOL_UNAVAILABLE");
     const inputVersions = moduleVersions(owned.snapshot);
@@ -320,7 +325,7 @@ export class WorkspaceToolExecutor {
       () => this.experts.synthesize({
         material: owned.job.material,
         ...experts,
-        abortSignal: context.signal,
+        ...expertRequest(context),
       }),
     );
     const synthesis = synthesisOutputSchema.parse(generated.value);
@@ -963,6 +968,13 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function firstString(...values: unknown[]): string | undefined {
   return values.find((value): value is string => typeof value === "string" && value.length > 0);
+}
+
+function expertRequest(context: WorkspaceExecutionContext) {
+  return {
+    abortSignal: context.signal,
+    ...(context.task ? { task: context.task } : {}),
+  };
 }
 
 function environmentPrice(
