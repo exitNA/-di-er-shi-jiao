@@ -34,3 +34,9 @@ it("ignores generated local Langfuse credentials", async () => {
 it("binds the Langfuse web interface to the local loopback address", async () => {
   await expect(read("compose.langfuse.yaml")).resolves.toContain('"127.0.0.1:3000:3000"');
 });
+
+it("disables ClickHouse clustering for the local single-node stack", async () => {
+  await expect(read("compose.langfuse.yaml")).resolves.toContain(
+    'CLICKHOUSE_CLUSTER_ENABLED: "false"',
+  );
+});
