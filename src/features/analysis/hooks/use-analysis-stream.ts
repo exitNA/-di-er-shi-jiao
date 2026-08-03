@@ -280,7 +280,7 @@ function processFromDelta(current: AgentProcessState, delta: unknown): AgentProc
 function hydrateRun(value: unknown): AgentProcessRun[] {
   if (!isRecord(value) || !stringValue(value.id)) return [];
   const steps = Array.isArray(value.steps) ? value.steps.flatMap((step) => hydrateStep(step)) : [];
-  return [{ id: stringValue(value.id)!, parentRunId: stringValue(value.parentRunId), name: stringValue(value.name) ?? "第二视角 Agent", status: runStatus(value.status), steps }];
+  return [{ id: stringValue(value.id)!, parentRunId: stringValue(value.parentRunId), name: stringValue(value.name) ?? "客户经理", status: runStatus(value.status), steps }];
 }
 
 function hydrateStep(value: unknown): AgentProcessRun["steps"] {
@@ -326,7 +326,7 @@ function updateToolEntry(run: AgentProcessRun, event: AgUiEvent): AgentProcessRu
 
 function updateRun(current: AgentProcessState, id: string, updater: (run: AgentProcessRun) => AgentProcessRun): AgentProcessState {
   const index = current.runs.findIndex((run) => run.id === id);
-  if (index < 0) return upsertRun(current, updater({ id, name: "第二视角 Agent", status: "running", steps: [] }));
+  if (index < 0) return upsertRun(current, updater({ id, name: "客户经理", status: "running", steps: [] }));
   const runs = [...current.runs]; runs[index] = updater(runs[index]);
   return { runs };
 }
@@ -368,7 +368,7 @@ function updateEntry(run: AgentProcessRun, stepName: string, entryId: string, up
 }
 
 function agentName(event: AgUiEvent): string {
-  return stringValue(event.agentName) ?? stringValue(event.name) ?? (stringValue(event.parentRunId) ? "子 Agent" : "第二视角 Agent");
+  return stringValue(event.agentName) ?? stringValue(event.name) ?? (stringValue(event.parentRunId) ? "子 Agent" : "客户经理");
 }
 
 function isAgUiEvent(value: unknown): value is AgUiEvent {

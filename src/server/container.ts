@@ -16,8 +16,13 @@ import {
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
 import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
-import { AiExpertSuite } from "@/server/agents/ai-expert-suite";
-import { WorkspaceAgentRuntime } from "@/server/agents/workspace-agent-runtime";
+import { analyzeArgument } from "@/server/agents/argument/agent";
+import { mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
+import { reviewRisks } from "@/server/agents/risks/agent";
+import { researchSources } from "@/server/agents/sources/agent";
+import { reviewTarget, reviseDraft, synthesize } from "@/server/agents/synthesis/agent";
+import type { ExpertSuite } from "@/server/agents/expert-suite";
+import { ManagerAgentRuntime } from "@/server/agents/manager/agent";
 import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
@@ -33,7 +38,7 @@ export type ApplicationContainer = {
   authService: AuthService;
   analysisRepository: AnalysisRepository;
   analysisDispatcher: AnalysisDispatcher;
-  workspaceAgentRuntime: Pick<WorkspaceAgentRuntime, "run">;
+  workspaceAgentRuntime: Pick<ManagerAgentRuntime, "run">;
   submitAnalysis(input: SubmitAnalysisInput): Promise<SubmitAnalysisResult>;
   submitChallenge(input: SubmitChallengeInput): Promise<SubmitChallengeResult>;
 };
@@ -54,18 +59,26 @@ export function getContainer(): ApplicationContainer {
       apiKey: env.LLM_API_KEY,
       modelId: env.LLM_MODEL_ID,
     };
-    const experts = new AiExpertSuite({
-      generator: new OpenAICompatibleGenerator(llmConfig),
-      ...(env.TAVILY_API_KEY
-        ? { searchClient: new TavilySearchClient({ apiKey: env.TAVILY_API_KEY }) }
-        : {}),
-    });
+    const generator = new OpenAICompatibleGenerator(llmConfig);
+    const searchTool = env.TAVILY_API_KEY
+      ? new TavilySearchClient({ apiKey: env.TAVILY_API_KEY })
+      : undefined;
+    const experts: ExpertSuite = {
+      analyzeArgument: (input) => analyzeArgument(generator, input),
+      mapPerspectives: (input) => mapPerspectives(generator, input),
+      researchSources: (input) => researchSources(generator, searchTool, input),
+      reviewRisks: (input) => reviewRisks(generator, input),
+      synthesize: (input) => synthesize(generator, input),
+      reviewDraft: (input) => reviewDraft(generator, input),
+      reviseDraft: (input) => reviseDraft(generator, input),
+      reviewTarget: (input) => reviewTarget(generator, input),
+    };
     const workspaceToolExecutor = new WorkspaceToolExecutor(
       experts,
       analysisRepository,
       now,
     );
-    const workspaceAgentRuntime = new WorkspaceAgentRuntime(
+    const workspaceAgentRuntime = new ManagerAgentRuntime(
       createOpenAICompatibleLanguageModel(llmConfig),
       workspaceToolExecutor,
       analysisRepository,

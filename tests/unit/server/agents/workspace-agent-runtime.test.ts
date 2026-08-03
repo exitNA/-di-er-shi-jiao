@@ -6,9 +6,9 @@ import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import type { NewAnalysisEvent } from "@/features/analysis/server/analysis-repository";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
 import {
-  WorkspaceAgentRuntime,
-  type WorkspaceAgentContextRepository,
-} from "@/server/agents/workspace-agent-runtime";
+  ManagerAgentRuntime,
+  type ManagerAgentContextRepository,
+} from "@/server/agents/manager/agent";
 import {
   workspaceToolNames,
   type AgentToolContext,
@@ -19,7 +19,7 @@ import {
 const workspaceId = "workspace-1";
 const agentRunId = "run-1";
 
-describe("WorkspaceAgentRuntime", () => {
+describe("ManagerAgentRuntime", () => {
   it("runs ToolLoopAgent with only workspace tools and server-owned context", async () => {
     const repository = baselineRepository();
     const executor = recordingExecutor(repository.complete);
@@ -30,7 +30,7 @@ describe("WorkspaceAgentRuntime", () => {
       ["revise_report"],
       ["publish_report"],
     ]);
-    const runtime = new WorkspaceAgentRuntime(model, executor, repository);
+    const runtime = new ManagerAgentRuntime(model, executor, repository);
     const signal = new AbortController().signal;
 
     await expect(runtime.run({ workspaceId, agentRunId, signal })).resolves.toEqual({
@@ -80,7 +80,7 @@ describe("WorkspaceAgentRuntime", () => {
         throw abortSignal?.reason;
       },
     });
-    const runtime = new WorkspaceAgentRuntime(
+    const runtime = new ManagerAgentRuntime(
       model,
       recordingExecutor(),
       baselineRepository(),
@@ -95,7 +95,7 @@ describe("WorkspaceAgentRuntime", () => {
     const model = new MockLanguageModelV4({
       doStream: async () => textStream("done"),
     });
-    const runtime = new WorkspaceAgentRuntime(
+    const runtime = new ManagerAgentRuntime(
       model,
       recordingExecutor(),
       baselineRepository(),
@@ -112,7 +112,7 @@ describe("WorkspaceAgentRuntime", () => {
     const model = new MockLanguageModelV4({
       doStream: async () => toolStream(["analyze_argument"]),
     });
-    const runtime = new WorkspaceAgentRuntime(
+    const runtime = new ManagerAgentRuntime(
       model,
       recordingExecutor(),
       baselineRepository(),
@@ -136,7 +136,7 @@ describe("WorkspaceAgentRuntime", () => {
       ["revise_report"],
       ["publish_report"],
     ]);
-    const runtime = new WorkspaceAgentRuntime(model, executor, repository);
+    const runtime = new ManagerAgentRuntime(model, executor, repository);
 
     await expect(runtime.run({
       workspaceId,
@@ -174,7 +174,7 @@ function baselineRepository(
     argumentCompleted?: boolean;
     persistedStep?: "synthesis" | "revision" | "stale-revision";
   } = {},
-): WorkspaceAgentContextRepository & {
+): ManagerAgentContextRepository & {
   complete(name: WorkspaceToolName): void;
   events: NewAnalysisEvent[];
 } {
@@ -338,7 +338,7 @@ function baselineRepository(
       events.push(event);
       return events.length;
     },
-  } as WorkspaceAgentContextRepository & {
+  } as ManagerAgentContextRepository & {
     complete(name: WorkspaceToolName): void;
     listPersistedAgentToolArtifacts(input: {
       toolName: WorkspaceToolName;

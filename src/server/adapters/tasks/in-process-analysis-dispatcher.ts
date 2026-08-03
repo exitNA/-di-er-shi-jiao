@@ -3,7 +3,7 @@ import {
   type AnalysisDispatcher,
 } from "@/features/analysis/server/analysis-dispatcher";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
-import type { WorkspaceAgentRuntime } from "@/server/agents/workspace-agent-runtime";
+import type { ManagerAgentRuntime } from "@/server/agents/manager/agent";
 
 export class InProcessAnalysisDispatcher implements AnalysisDispatcher {
   private readonly executions = new Map<
@@ -12,7 +12,7 @@ export class InProcessAnalysisDispatcher implements AnalysisDispatcher {
   >();
 
   constructor(
-    private readonly runtime: Pick<WorkspaceAgentRuntime, "run">,
+    private readonly runtime: Pick<ManagerAgentRuntime, "run">,
     private readonly repository: Pick<
       AnalysisRepository,
       "claimAgentRun" | "finishAgentRun" | "getJobForExecution" | "requestAgentRunCancellation"

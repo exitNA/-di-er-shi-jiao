@@ -7,7 +7,7 @@ import { executeAgentRun } from "@/features/analysis/server/analysis-dispatcher"
 import { PostgresAnalysisRepository } from "@/features/analysis/server/postgres-analysis-repository";
 import { submitChallenge } from "@/features/conversation/server/submit-challenge";
 import type { ExpertSuite } from "@/server/agents/expert-suite";
-import { WorkspaceAgentRuntime } from "@/server/agents/workspace-agent-runtime";
+import { ManagerAgentRuntime } from "@/server/agents/manager/agent";
 import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
 import { users } from "@/server/db/schema/auth";
 import { createTestDb, migrateTestDb, truncateTestDb } from "../../../helpers/database";
@@ -235,7 +235,7 @@ describe("workspace Agent challenge", () => {
 
 function createChallengeRuntime(
   experts: ExpertSuite = createStubExpertSuite(),
-): WorkspaceAgentRuntime {
+): ManagerAgentRuntime {
   let call = 0;
   const model = new MockLanguageModelV4({
     doStream: async () => {
@@ -248,7 +248,7 @@ function createChallengeRuntime(
       }] : [{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], review ? "tool-calls" : "stop");
     },
   });
-  return new WorkspaceAgentRuntime(
+  return new ManagerAgentRuntime(
     model,
     new WorkspaceToolExecutor(experts, repository, () => now),
     repository,

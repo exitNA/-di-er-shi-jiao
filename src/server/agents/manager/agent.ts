@@ -6,6 +6,7 @@ import {
 } from "ai";
 import { z } from "zod";
 
+import type { AgentRunKind } from "@/features/analysis/domain/workspace";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
 import {
   moduleTypes,
@@ -13,25 +14,25 @@ import {
   type ReportModuleType,
 } from "@/features/analysis/domain/contracts";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
-import { promptForRun, workspaceAgentInstructions } from "./workspace-agent-prompts";
+import { loadPromptTemplate } from "../shared/prompt";
 import {
   workspaceToolNames,
   type AgentToolContext,
   type WorkspaceToolExecutor,
   type WorkspaceToolName,
-} from "./workspace-tool-executor";
+} from "../workspace-tool-executor";
 
-export type WorkspaceAgentRunInput = {
+export type ManagerAgentRunInput = {
   workspaceId: string;
   agentRunId: string;
   signal: AbortSignal;
 };
 
-export type WorkspaceAgentRunResult = {
+export type ManagerAgentRunResult = {
   status: "completed" | "interrupted";
 };
 
-export type WorkspaceAgentContextRepository = Pick<
+export type ManagerAgentContextRepository = Pick<
   AnalysisRepository,
   | "getJobForExecution"
   | "getOwnedSnapshot"
@@ -40,13 +41,25 @@ export type WorkspaceAgentContextRepository = Pick<
   | "appendEvent"
 >;
 
-export type WorkspaceAgentToolExecutor = Pick<WorkspaceToolExecutor, "execute">;
+export type ManagerAgentToolExecutor = Pick<WorkspaceToolExecutor, "execute">;
 
-type WorkspaceAgentContext = AgentToolContext & {
+type ManagerAgentContext = AgentToolContext & {
   userId: string;
   kind: "baseline" | "challenge";
   completedTools: WorkspaceToolName[];
 };
+
+const managerAgentInstructions = loadPromptTemplate("manager/prompts/system");
+
+function promptForRun(input: {
+  kind: AgentRunKind;
+  completedTools?: readonly WorkspaceToolName[];
+}): string {
+  const completed = input.completedTools?.length
+    ? `已完成工具：${input.completedTools.join("、")}。`
+    : "当前没有已完成工具。";
+  return `${loadPromptTemplate(input.kind === "challenge" ? "manager/prompts/challenge" : "manager/prompts/baseline")}\n${completed}`;
+}
 
 const emptyInputSchema = z.object({}).strict();
 const workspaceToolNameSet = new Set<string>(workspaceToolNames);
@@ -67,27 +80,27 @@ const baselineToolDefinitions = [
   ["publish_report", "检查报告是否满足发布条件。"],
 ] as const;
 
-export class WorkspaceAgentRuntime {
+export class ManagerAgentRuntime {
   constructor(
     private readonly model: LanguageModel,
-    private readonly executor: WorkspaceAgentToolExecutor,
-    private readonly repository: WorkspaceAgentContextRepository,
+    private readonly executor: ManagerAgentToolExecutor,
+    private readonly repository: ManagerAgentContextRepository,
   ) {}
 
-  async run(input: WorkspaceAgentRunInput): Promise<WorkspaceAgentRunResult> {
-    let context: WorkspaceAgentContext | undefined;
+  async run(input: ManagerAgentRunInput): Promise<ManagerAgentRunResult> {
+    let context: ManagerAgentContext | undefined;
     try {
-      context = await loadWorkspaceAgentContext(this.repository, input);
+      context = await loadManagerAgentContext(this.repository, input);
       await this.appendEvent(context, "agent.ui.run.started", {
         runId: input.agentRunId,
         threadId: input.workspaceId,
         parentRunId: null,
-        agentId: "second-perspective",
-        agentName: "第二视角 Agent",
+        agentId: "manager",
+        agentName: "客户经理",
       });
       const agent = new ToolLoopAgent({
         model: this.model,
-        instructions: workspaceAgentInstructions,
+        instructions: managerAgentInstructions,
         tools: createAiSdkTools(this.executor, context),
         stopWhen: stepCountIs(16),
       });
@@ -267,7 +280,7 @@ export class WorkspaceAgentRuntime {
   }
 
   private appendEvent(
-    context: WorkspaceAgentContext,
+    context: ManagerAgentContext,
     eventType: Extract<
       AnalysisRepository extends { appendEvent(input: infer Input): unknown }
         ? Input extends { eventType: infer EventType } ? EventType : never
@@ -311,10 +324,10 @@ function errorCode(error: unknown): string {
     : "AGENT_RUN_FAILED";
 }
 
-export async function loadWorkspaceAgentContext(
-  repository: WorkspaceAgentContextRepository,
-  input: WorkspaceAgentRunInput,
-): Promise<WorkspaceAgentContext> {
+export async function loadManagerAgentContext(
+  repository: ManagerAgentContextRepository,
+  input: ManagerAgentRunInput,
+): Promise<ManagerAgentContext> {
   const job = await repository.getJobForExecution(input.workspaceId);
   if (!job) throw new Error("WORKSPACE_NOT_FOUND");
   const snapshot = await repository.getOwnedSnapshot(job.userId, input.workspaceId);
@@ -361,7 +374,7 @@ export async function loadWorkspaceAgentContext(
 }
 
 async function resolveCompletedBaselineTools(
-  repository: WorkspaceAgentContextRepository,
+  repository: ManagerAgentContextRepository,
   userId: string,
   snapshot: AnalysisSnapshot,
   completedToolNames: ReadonlySet<WorkspaceToolName>,
@@ -453,10 +466,18 @@ function isRevisionArtifact(
 }
 
 function createAiSdkTools(
-  executor: WorkspaceAgentToolExecutor,
-  context: WorkspaceAgentContext,
+  executor: ManagerAgentToolExecutor,
+  context: ManagerAgentContext,
 ) {
-  const { userId: _userId, ...toolContext } = context;
+  const toolContext = {
+    workspaceId: context.workspaceId,
+    agentRunId: context.agentRunId,
+    signal: context.signal,
+    kind: context.kind,
+    completedTools: context.completedTools,
+    ...(context.messageId ? { messageId: context.messageId } : {}),
+    ...(context.target ? { target: context.target } : {}),
+  };
   const noInputTool = (name: WorkspaceToolName, description: string) =>
     tool({
       description,
@@ -474,10 +495,10 @@ function createAiSdkTools(
 }
 
 async function assertBaselineRunCompleted(
-  repository: WorkspaceAgentContextRepository,
-  input: WorkspaceAgentRunInput,
+  repository: ManagerAgentContextRepository,
+  input: ManagerAgentRunInput,
 ): Promise<void> {
-  const context = await loadWorkspaceAgentContext(repository, input);
+  const context = await loadManagerAgentContext(repository, input);
   if (
     context.kind !== "baseline"
     || baselineToolDefinitions.some(([name]) => !context.completedTools.includes(name))
@@ -487,8 +508,8 @@ async function assertBaselineRunCompleted(
 }
 
 export async function assertChallengeRunCompleted(
-  repository: WorkspaceAgentContextRepository,
-  input: WorkspaceAgentRunInput,
+  repository: ManagerAgentContextRepository,
+  input: ManagerAgentRunInput,
   messageId?: string,
 ): Promise<void> {
   const job = await repository.getJobForExecution(input.workspaceId);

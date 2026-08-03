@@ -9,8 +9,8 @@ it("renders nested Agent activity with real reasoning and redacted tool details"
   render(<AgentProcessTimeline process={process()} />);
 
   expect(screen.getByRole("region", { name: "Agent 过程" })).toBeVisible();
-  expect(screen.getByText("第二视角 Agent")).toBeVisible();
-  await userEvent.click(screen.getByText("第二视角 Agent"));
+  expect(screen.getByText("客户经理")).toBeVisible();
+  await userEvent.click(screen.getByText("客户经理"));
   expect(screen.getByText("比较两组证据后再下结论。")).toBeVisible();
   expect(screen.getByText((_, element) => element?.textContent === '输入：{"query":"原始材料"}\n输出：找到两条来源')).toBeVisible();
   expect(screen.getByText("模型输出")).toBeVisible();
@@ -25,7 +25,7 @@ function process(): AgentProcessState {
     runs: [
       {
         id: "main",
-        name: "第二视角 Agent",
+        name: "客户经理",
         status: "running",
         steps: [
           {

@@ -3,8 +3,12 @@ import { resolve } from "node:path";
 import { baselineDraftSchema, type SourcesModule } from "@/features/analysis/domain/contracts";
 import { OpenAICompatibleGenerator } from "@/server/adapters/ai/openai-compatible-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
-import { AiExpertSuite } from "@/server/agents/ai-expert-suite";
+import { analyzeArgument } from "@/server/agents/argument/agent";
 import type { ExpertSuite } from "@/server/agents/expert-suite";
+import { mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
+import { reviewRisks } from "@/server/agents/risks/agent";
+import { researchSources } from "@/server/agents/sources/agent";
+import { reviewTarget, reviseDraft, synthesize } from "@/server/agents/synthesis/agent";
 import { loadServerEnv } from "@/server/config/env";
 import {
   evaluationReportSchema,
@@ -81,16 +85,24 @@ async function main(): Promise<void> {
 
 function createRealExpertSuite(): ExpertSuite {
   const env = loadServerEnv();
-  return new AiExpertSuite({
-    generator: new OpenAICompatibleGenerator({
-      baseURL: env.LLM_BASE_URL,
-      apiKey: env.LLM_API_KEY,
-      modelId: env.LLM_MODEL_ID,
-    }),
-    ...(env.TAVILY_API_KEY
-      ? { searchClient: new TavilySearchClient({ apiKey: env.TAVILY_API_KEY }) }
-      : {}),
+  const generator = new OpenAICompatibleGenerator({
+    baseURL: env.LLM_BASE_URL,
+    apiKey: env.LLM_API_KEY,
+    modelId: env.LLM_MODEL_ID,
   });
+  const searchTool = env.TAVILY_API_KEY
+    ? new TavilySearchClient({ apiKey: env.TAVILY_API_KEY })
+    : undefined;
+  return {
+    analyzeArgument: (input) => analyzeArgument(generator, input),
+    mapPerspectives: (input) => mapPerspectives(generator, input),
+    researchSources: (input) => researchSources(generator, searchTool, input),
+    reviewRisks: (input) => reviewRisks(generator, input),
+    synthesize: (input) => synthesize(generator, input),
+    reviewDraft: (input) => reviewDraft(generator, input),
+    reviseDraft: (input) => reviseDraft(generator, input),
+    reviewTarget: (input) => reviewTarget(generator, input),
+  };
 }
 
 async function evaluateSample(

@@ -2,13 +2,13 @@ import "server-only";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const promptDirectory = join(process.cwd(), "prompts");
+const promptDirectory = join(process.cwd(), "src/server/agents");
 
 export function loadPromptTemplate(name: string): string {
   return readFileSync(join(promptDirectory, `${name}.md`), "utf8").trim();
 }
 
-export const commonSystemInstruction = loadPromptTemplate("common");
+export const commonSystemInstruction = loadPromptTemplate("shared/prompts/common");
 
 export function systemInstruction(task: string): string {
   return `${commonSystemInstruction}\n\n${task}`;

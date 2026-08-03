@@ -111,7 +111,7 @@ describe("useAnalysisStream", () => {
     const source = MockEventSource.instances[0];
 
     await act(async () => {
-      source.emitAgUi({ type: "RUN_STARTED", runId: "main", agentName: "第二视角 Agent" }, "1");
+      source.emitAgUi({ type: "RUN_STARTED", runId: "main", agentName: "客户经理" }, "1");
       source.emitAgUi({ type: "STEP_STARTED", runId: "main", stepName: "核对证据" }, "2");
       source.emitAgUi({ type: "REASONING_MESSAGE_CONTENT", runId: "main", messageId: "reason-1", delta: "先比较证据。" }, "3");
       source.emitAgUi({ type: "TOOL_CALL_START", runId: "main", toolCallId: "tool-1", toolCallName: "search" }, "4");

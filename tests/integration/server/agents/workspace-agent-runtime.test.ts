@@ -3,10 +3,10 @@ import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
-import { WorkspaceAgentRuntime } from "@/server/agents/workspace-agent-runtime";
+import { ManagerAgentRuntime } from "@/server/agents/manager/agent";
 import type { AgentToolContext, WorkspaceToolName } from "@/server/agents/workspace-tool-executor";
 
-describe("WorkspaceAgentRuntime challenge context", () => {
+describe("ManagerAgentRuntime challenge context", () => {
   it("binds review_target to the challenge referenced by the Agent run", async () => {
     const target = { moduleType: "risks", section: "items", itemId: "risk-1" } as const;
     const snapshot = challengeSnapshot(target);
@@ -24,7 +24,7 @@ describe("WorkspaceAgentRuntime challenge context", () => {
         }] : [{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], review ? "tool-calls" : "stop");
       },
     });
-    const runtime = new WorkspaceAgentRuntime(
+    const runtime = new ManagerAgentRuntime(
       model,
       {
         async execute(name, context) {
@@ -92,7 +92,7 @@ describe("WorkspaceAgentRuntime challenge context", () => {
 
   it("rejects a challenge run when the model stops before a completed review_target", async () => {
     const target = { moduleType: "risks", section: "items", itemId: "risk-1" } as const;
-    const runtime = new WorkspaceAgentRuntime(
+    const runtime = new ManagerAgentRuntime(
       new MockLanguageModelV4({
         doStream: async () => streamResult([{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], "stop"),
       }),

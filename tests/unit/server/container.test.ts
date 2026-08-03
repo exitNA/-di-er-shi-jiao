@@ -34,8 +34,8 @@ describe("getContainer", () => {
       const { InProcessAnalysisDispatcher } = await import(
         "@/server/adapters/tasks/in-process-analysis-dispatcher"
       );
-      const { WorkspaceAgentRuntime } = await import(
-        "@/server/agents/workspace-agent-runtime"
+      const { ManagerAgentRuntime } = await import(
+        "@/server/agents/manager/agent"
       );
 
       const first = getContainer();
@@ -45,7 +45,7 @@ describe("getContainer", () => {
         InProcessAnalysisDispatcher,
       );
       expect(first.workspaceAgentRuntime).toBeInstanceOf(
-        WorkspaceAgentRuntime,
+        ManagerAgentRuntime,
       );
     },
     30_000,

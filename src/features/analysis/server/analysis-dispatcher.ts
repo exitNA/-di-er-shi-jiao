@@ -1,4 +1,4 @@
-import type { WorkspaceAgentRunInput, WorkspaceAgentRunResult } from "@/server/agents/workspace-agent-runtime";
+import type { ManagerAgentRunInput, ManagerAgentRunResult } from "@/server/agents/manager/agent";
 import { getLogger } from "@logtape/logtape";
 import type { AnalysisRepository } from "./analysis-repository";
 
@@ -22,8 +22,8 @@ type AgentRunLifecycleRepository = Pick<
 >;
 
 export async function executeAgentRun(
-  input: WorkspaceAgentRunInput & { triggerRunId: string },
-  runtime: { run(input: WorkspaceAgentRunInput): Promise<WorkspaceAgentRunResult> },
+  input: ManagerAgentRunInput & { triggerRunId: string },
+  runtime: { run(input: ManagerAgentRunInput): Promise<ManagerAgentRunResult> },
   repository: AgentRunLifecycleRepository,
   now: () => Date = () => new Date(),
 ): Promise<"completed" | "interrupted" | "recoverable" | "unavailable"> {

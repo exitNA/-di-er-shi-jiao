@@ -111,7 +111,7 @@ export function ConversationPanel({
           {messages.map((message) => (
             <li key={message.id} className="rounded-2xl bg-forest-soft/65 p-4">
               <p className="text-sm font-medium">
-                {message.role === "user" ? "你的质疑" : "第二视角 Agent"}
+                {message.role === "user" ? "你的质疑" : "客户经理"}
               </p>
               <p className="mt-1 leading-7">{message.content}</p>
               {message.role === "user" && message.status !== "completed" ? (
@@ -139,7 +139,7 @@ export function ConversationPanel({
       ) : null}
       {agentOutput ? (
         <div className="mt-3 rounded-2xl bg-forest-soft/65 p-4" aria-live="polite">
-          <p className="text-sm font-medium">第二视角 Agent</p>
+          <p className="text-sm font-medium">客户经理</p>
           <p className="mt-1 leading-7">{agentOutput}</p>
         </div>
       ) : null}
