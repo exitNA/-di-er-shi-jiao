@@ -26,6 +26,9 @@ function parseAttribute(value: unknown): unknown {
 function observations() {
   return exporter.getFinishedSpans().map((span) => ({
     name: span.name,
+    traceId: span.spanContext().traceId,
+    spanId: span.spanContext().spanId,
+    parentSpanId: span.parentSpanContext?.spanId,
     asType: span.attributes[LangfuseOtelSpanAttributes.OBSERVATION_TYPE],
     input: parseAttribute(span.attributes[LangfuseOtelSpanAttributes.OBSERVATION_INPUT]),
     output: parseAttribute(span.attributes[LangfuseOtelSpanAttributes.OBSERVATION_OUTPUT]),
@@ -58,7 +61,11 @@ describe("agent tool observability", () => {
     );
     await processor.forceFlush();
 
-    expect(observations()).toContainEqual(expect.objectContaining({
+    const recorded = observations();
+    const analysis = recorded.find(({ name }) => name === "analysis.baseline");
+    const search = recorded.find(({ name }) => name === "sources.search");
+
+    expect(search).toEqual(expect.objectContaining({
       name: "sources.search",
       asType: "retriever",
       input: expect.objectContaining({
@@ -71,6 +78,10 @@ describe("agent tool observability", () => {
           content: "Complete search result",
         })],
       },
+    }));
+    expect(search).toEqual(expect.objectContaining({
+      traceId: analysis?.traceId,
+      parentSpanId: analysis?.spanId,
     }));
   });
 
@@ -102,7 +113,12 @@ describe("agent tool observability", () => {
     );
     await processor.forceFlush();
 
-    expect(observations()).toEqual(expect.arrayContaining([
+    const recorded = observations();
+    const analysis = recorded.find(({ name }) => name === "analysis.baseline");
+    const argument = recorded.find(({ name }) => name === "workspace.analyze_argument");
+    const publication = recorded.find(({ name }) => name === "workspace.publish_report");
+
+    expect(recorded).toEqual(expect.arrayContaining([
       expect.objectContaining({
         name: "workspace.analyze_argument",
         asType: "tool",
@@ -123,6 +139,51 @@ describe("agent tool observability", () => {
           action: "publish_report",
         },
         output: results[1],
+      }),
+    ]));
+    expect([argument, publication]).toEqual([
+      expect.objectContaining({ traceId: analysis?.traceId, parentSpanId: analysis?.spanId }),
+      expect.objectContaining({ traceId: analysis?.traceId, parentSpanId: analysis?.spanId }),
+    ]);
+  });
+
+  it("records and rethrows expert and report executor errors", async () => {
+    const executor = Object.create(WorkspaceToolExecutor.prototype) as WorkspaceToolExecutor;
+    vi.spyOn(executor, "execute")
+      .mockRejectedValueOnce(new Error("expert execution failed"))
+      .mockRejectedValueOnce(new Error("report execution failed"));
+
+    await withAnalysisTrace(
+      { workspaceId: "w1", userId: "u1", kind: "baseline", material: "原始材料" },
+      async () => {
+        await expect(executor.runExpert({
+          workspaceId: "w1",
+          agentRunId: "r1",
+          expert: "argument",
+        })).rejects.toThrow("expert execution failed");
+        await expect(executor.runReportAction({
+          workspaceId: "w1",
+          agentRunId: "r1",
+          action: "publish_report",
+        })).rejects.toThrow("report execution failed");
+      },
+    );
+    await processor.forceFlush();
+
+    expect(observations()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "workspace.analyze_argument",
+        asType: "tool",
+        level: "ERROR",
+        statusMessage: "expert execution failed",
+        output: { error: "expert execution failed" },
+      }),
+      expect.objectContaining({
+        name: "workspace.publish_report",
+        asType: "tool",
+        level: "ERROR",
+        statusMessage: "report execution failed",
+        output: { error: "report execution failed" },
       }),
     ]));
   });
