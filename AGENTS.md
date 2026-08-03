@@ -54,7 +54,7 @@
 ## 测试规范
 
 - 单元与组件：Vitest + React Testing Library + `@testing-library/jest-dom`。
-- 端到端：Playwright；仅覆盖关键用户路径。
+- 不编写或运行端到端（E2E）测试；关键用户路径由用户手工测试。
 - API Mock：MSW，按需引入。
 - `tests/unit/`：`*.test.ts`、`*.test.tsx`；`tests/e2e/`：`*.spec.ts`。
 - 优先断言用户可见行为和业务结果；使用语义化查询，不依赖 DOM 结构。
