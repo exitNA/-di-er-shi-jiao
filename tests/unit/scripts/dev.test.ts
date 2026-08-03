@@ -23,10 +23,19 @@ it("loads required development settings from .env files without printing them", 
     "LLM_MODEL_ID=test-model",
     "TAVILY_API_KEY=test-tavily-key",
   ].join("\n"));
+  await writeFile(join(fixture, ".env.langfuse.local"), [
+    "LANGFUSE_BASE_URL=http://127.0.0.1:3000",
+    "LANGFUSE_PUBLIC_KEY=pk-lf-test",
+    "LANGFUSE_SECRET_KEY=sk-lf-test",
+    "LANGFUSE_TRACING_ENVIRONMENT=local",
+  ].join("\n"));
   await writeFile(join(bin, "pnpm"), `#!/bin/sh
 set -eu
 test "$LLM_API_KEY" = "${secret}"
 test "$ANALYSIS_RUNTIME" = "in-process"
+test "$LANGFUSE_BASE_URL" = "http://127.0.0.1:3000"
+test "$LANGFUSE_PUBLIC_KEY" = "pk-lf-test"
+test "$LANGFUSE_SECRET_KEY" = "sk-lf-test"
 printf 'development environment loaded\\n'
 `);
   await writeFile(join(bin, "ss"), "#!/bin/sh\nexit 0\n");
