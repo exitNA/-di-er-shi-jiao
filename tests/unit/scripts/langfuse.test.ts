@@ -1,0 +1,25 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { expect, it } from "vitest";
+
+const read = (file: string) => readFile(join(process.cwd(), file), "utf8");
+
+it("starts Langfuse with generated local credentials and persistent services", async () => {
+  const [packageJson, compose, envExample] = await Promise.all([
+    read("package.json"),
+    read("compose.langfuse.yaml"),
+    read(".env.example"),
+  ]);
+
+  expect(JSON.parse(packageJson).scripts["langfuse:up"]).toContain("scripts/langfuse-up.sh");
+  expect(compose).toMatch(/^  langfuse-web:/m);
+  expect(compose).toMatch(/^  langfuse-worker:/m);
+  expect(compose).toMatch(/^  clickhouse:/m);
+  expect(compose).toMatch(/^  redis:/m);
+  expect(compose).toMatch(/^  minio:/m);
+  expect(envExample).toContain("LANGFUSE_BASE_URL=http://localhost:3000");
+});
+
+it("keeps the Langfuse stack separate from the application Compose project", async () => {
+  await expect(read("compose.langfuse.yaml")).resolves.toMatch(/^name: second-perspective-langfuse$/m);
+});
