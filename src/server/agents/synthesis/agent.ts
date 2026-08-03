@@ -1,26 +1,70 @@
-import { baselineDraftSchema } from "@/features/analysis/domain/contracts";
+import {
+  baselineDraftSchema,
+  type BaselineDraft,
+  type OverviewModule,
+  type ReflectionModule,
+} from "@/features/analysis/domain/contracts";
 import {
   targetedReviewSchema,
+  type TargetedReview,
   type TargetedReviewInput,
 } from "@/features/conversation/domain/contracts";
-import type { StructuredGenerator } from "@/server/ai/structured-generator";
 import {
   synthesisOutputSchema,
   type DraftRevisionInput,
   type SynthesisInput,
 } from "../expert-suite";
+import {
+  createExpertHarness,
+  type ExpertHarness,
+  type ExpertSessionFactory,
+  zodCompletionSchema,
+} from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
 
 const synthesisSystemInstruction = systemInstruction(loadPromptTemplate("synthesis/prompts/system"));
 const draftRevisionSystemInstruction = systemInstruction(loadPromptTemplate("synthesis/prompts/draft-revision"));
 const targetedReviewSystemInstruction = systemInstruction(loadPromptTemplate("synthesis/prompts/targeted-review"));
 
-export function synthesize(generator: StructuredGenerator, input: SynthesisInput) {
-  return generator.generate({
+type SynthesisOutput = { overview: OverviewModule; reflection: ReflectionModule };
+
+export function createSynthesisExpert(createSession: ExpertSessionFactory): {
+  synthesize: ExpertHarness<SynthesisOutput>;
+  reviseDraft: ExpertHarness<BaselineDraft>;
+} {
+  return {
+    synthesize: createExpertHarness({
+      schema: synthesisOutputSchema,
+      completionSchema: zodCompletionSchema(synthesisOutputSchema),
+      createSession,
+    }),
+    reviseDraft: createExpertHarness({
+      schema: baselineDraftSchema,
+      completionSchema: zodCompletionSchema(baselineDraftSchema),
+      createSession,
+    }),
+  };
+}
+
+export function createTargetedReviewExpert(
+  createSession: ExpertSessionFactory,
+  input: TargetedReviewInput,
+): ExpertHarness<TargetedReview> {
+  const schema = targetedReviewSchema(
+    input.target.moduleType,
+    new Set(input.newSources?.map((source) => source.id)),
+  );
+  return createExpertHarness({ schema, completionSchema: zodCompletionSchema(schema), createSession });
+}
+
+export function synthesize(
+  harness: ExpertHarness<SynthesisOutput>,
+  input: SynthesisInput,
+) {
+  return harness.run({
     operation: "synthesis",
     system: synthesisSystemInstruction,
     prompt: synthesisPrompt(input.material, expertOutputs(input)),
-    schema: synthesisOutputSchema,
     abortSignal: input.abortSignal,
   });
 }
@@ -29,18 +73,20 @@ function synthesisPrompt(material: string, outputs: unknown): string {
   return `${sourceMaterial(material)}\n\n${sourceMaterial(JSON.stringify(outputs))}`;
 }
 
-export function reviseDraft(generator: StructuredGenerator, input: DraftRevisionInput) {
-  return generator.generate({
+export function reviseDraft(harness: ExpertHarness<BaselineDraft>, input: DraftRevisionInput) {
+  return harness.run({
     operation: "draft-revision",
     system: draftRevisionSystemInstruction,
     prompt: `${synthesisPrompt(input.material, expertOutputs(input))}\n\n${sourceMaterial(JSON.stringify(input.draft))}\n\n${sourceMaterial(JSON.stringify(input.findings))}`,
-    schema: baselineDraftSchema,
     abortSignal: input.abortSignal,
   });
 }
 
-export function reviewTarget(generator: StructuredGenerator, input: TargetedReviewInput) {
-  return generator.generate({
+export function reviewTarget(
+  harness: ExpertHarness<TargetedReview>,
+  input: TargetedReviewInput,
+) {
+  return harness.run({
     operation: "targeted-review",
     system: targetedReviewSystemInstruction,
     prompt: `${sourceMaterial(input.material)}\n\n${sourceMaterial(JSON.stringify({
@@ -49,10 +95,6 @@ export function reviewTarget(generator: StructuredGenerator, input: TargetedRevi
       conversation: input.conversation,
       persistedSources: input.newSources ?? [],
     }))}`,
-    schema: targetedReviewSchema(
-      input.target.moduleType,
-      new Set(input.newSources?.map((source) => source.id)),
-    ),
     abortSignal: input.abortSignal,
   });
 }

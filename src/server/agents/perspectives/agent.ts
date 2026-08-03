@@ -1,21 +1,44 @@
-import { perspectivesModuleSchema } from "@/features/analysis/domain/contracts";
-import type { StructuredGenerator } from "@/server/ai/structured-generator";
+import { perspectivesModuleSchema, type PerspectivesModule } from "@/features/analysis/domain/contracts";
 import {
   draftReviewSchema,
+  type DraftReview,
   type DraftReviewInput,
   type ExpertInput,
 } from "../expert-suite";
+import {
+  createExpertHarness,
+  type ExpertHarness,
+  type ExpertSessionFactory,
+  zodCompletionSchema,
+} from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
 
 const perspectivesSystemInstruction = systemInstruction(loadPromptTemplate("perspectives/prompts/system"));
 export const draftReviewSystemInstruction = systemInstruction(loadPromptTemplate("perspectives/prompts/draft-review"));
 
-export function mapPerspectives(generator: StructuredGenerator, input: ExpertInput) {
-  return generator.generate({
+export function createPerspectivesExpert(createSession: ExpertSessionFactory): {
+  mapPerspectives: ExpertHarness<PerspectivesModule>;
+  reviewDraft: ExpertHarness<DraftReview>;
+} {
+  return {
+    mapPerspectives: createExpertHarness({
+      schema: perspectivesModuleSchema,
+      completionSchema: zodCompletionSchema(perspectivesModuleSchema),
+      createSession,
+    }),
+    reviewDraft: createExpertHarness({
+      schema: draftReviewSchema,
+      completionSchema: zodCompletionSchema(draftReviewSchema),
+      createSession,
+    }),
+  };
+}
+
+export function mapPerspectives(harness: ExpertHarness<PerspectivesModule>, input: ExpertInput) {
+  return harness.run({
     operation: "perspectives",
     system: perspectivesSystemInstruction,
     prompt: perspectivesPrompt(input.material),
-    schema: perspectivesModuleSchema,
     abortSignal: input.abortSignal,
   });
 }
@@ -28,12 +51,11 @@ function draftReviewPrompt(material: string, draft: unknown): string {
   return `${sourceMaterial(material)}\n\n${sourceMaterial(JSON.stringify(draft))}`;
 }
 
-export function reviewDraft(generator: StructuredGenerator, input: DraftReviewInput) {
-  return generator.generate({
+export function reviewDraft(harness: ExpertHarness<DraftReview>, input: DraftReviewInput) {
+  return harness.run({
     operation: "draft-review",
     system: draftReviewSystemInstruction,
     prompt: draftReviewPrompt(input.material, input.draft),
-    schema: draftReviewSchema,
     abortSignal: input.abortSignal,
   });
 }

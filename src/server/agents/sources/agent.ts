@@ -4,9 +4,14 @@ import {
   type ExternalSource,
   type SourcesModule,
 } from "@/features/analysis/domain/contracts";
-import type { StructuredGenerator } from "@/server/ai/structured-generator";
 import type { SearchResult } from "@/server/search/search-client";
 import type { ExpertInput, ExpertResult } from "../expert-suite";
+import {
+  createExpertHarness,
+  type ExpertHarness,
+  type ExpertSessionFactory,
+  zodCompletionSchema,
+} from "../shared/expert-harness";
 import { externalSource, loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
 import type { SearchTool } from "./tools/search";
 
@@ -19,8 +24,16 @@ type SourceCandidate = SearchResult & {
 
 const sourcesSystemInstruction = systemInstruction(loadPromptTemplate("sources/prompts/system"));
 
+export function createSourcesExpert(createSession: ExpertSessionFactory): ExpertHarness<SourcesModule> {
+  return createExpertHarness({
+    schema: sourcesModuleSchema,
+    completionSchema: zodCompletionSchema(sourcesModuleSchema),
+    createSession,
+  });
+}
+
 export async function researchSources(
-  generator: StructuredGenerator,
+  harness: ExpertHarness<SourcesModule>,
   searchTool: SearchTool | undefined,
   input: ExpertInput,
 ): Promise<ExpertResult<SourcesModule>> {
@@ -29,11 +42,10 @@ export async function researchSources(
       searchTool.search({ query, topic: "general", maxResults: 5, signal: input.abortSignal }),
     )).flat().slice(0, 15))
     : [];
-  const generated = await generator.generate({
+  const generated = await harness.run({
     operation: "sources",
     system: sourcesSystemInstruction,
     prompt: sourcesPrompt(input.material, candidates.slice(0, 8)),
-    schema: sourcesModuleSchema,
     abortSignal: input.abortSignal,
   });
 
