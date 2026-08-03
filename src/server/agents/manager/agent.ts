@@ -1,11 +1,3 @@
-import {
-  stepCountIs,
-  tool,
-  ToolLoopAgent,
-  type LanguageModel,
-} from "ai";
-import { z } from "zod";
-
 import type { AgentRunKind } from "@/features/analysis/domain/workspace";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
 import {
@@ -14,13 +6,20 @@ import {
   type ReportModuleType,
 } from "@/features/analysis/domain/contracts";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
-import { loadPromptTemplate } from "../shared/prompt";
+import {
+  type ExpertSession,
+  type ExpertSessionInput,
+  expertResourceDir,
+} from "../shared/expert-harness";
+import { loadPromptTemplate, systemInstruction } from "../shared/prompt";
 import {
   workspaceToolNames,
   type AgentToolContext,
   type WorkspaceToolExecutor,
   type WorkspaceToolName,
 } from "../workspace-tool-executor";
+import { createDelegateExpertTool } from "./tools/delegate-expert";
+import { createReportActionTool } from "./tools/report-actions";
 
 export type ManagerAgentRunInput = {
   workspaceId: string;
@@ -41,7 +40,15 @@ export type ManagerAgentContextRepository = Pick<
   | "appendEvent"
 >;
 
-export type ManagerAgentToolExecutor = Pick<WorkspaceToolExecutor, "execute">;
+export type ManagerAgentToolExecutor = Pick<
+  WorkspaceToolExecutor,
+  "runExpert" | "runReportAction"
+>;
+
+export type ManagerAgentSessionInput = ExpertSessionInput;
+export type ManagerAgentSessionFactory = (
+  input: ManagerAgentSessionInput,
+) => Promise<ExpertSession>;
 
 type ManagerAgentContext = AgentToolContext & {
   userId: string;
@@ -49,7 +56,7 @@ type ManagerAgentContext = AgentToolContext & {
   completedTools: WorkspaceToolName[];
 };
 
-const managerAgentInstructions = loadPromptTemplate("manager/prompts/system");
+const managerAgentInstructions = systemInstruction(loadPromptTemplate("manager/prompts/system"));
 
 function promptForRun(input: {
   kind: AgentRunKind;
@@ -61,7 +68,6 @@ function promptForRun(input: {
   return `${loadPromptTemplate(input.kind === "challenge" ? "manager/prompts/challenge" : "manager/prompts/baseline")}\n${completed}`;
 }
 
-const emptyInputSchema = z.object({}).strict();
 const workspaceToolNameSet = new Set<string>(workspaceToolNames);
 const baselineModuleTools = [
   { toolName: "analyze_argument", moduleType: "argument" },
@@ -69,26 +75,29 @@ const baselineModuleTools = [
   { toolName: "map_perspectives", moduleType: "perspectives" },
   { toolName: "review_risks", moduleType: "risks" },
 ] as const;
-const baselineToolDefinitions = [
-  ["analyze_argument", "核对素材中的主张与论证结构。"],
-  ["research_sources", "查找并核验报告所需的外部信源。"],
-  ["map_perspectives", "整理支持、反对和利益相关方视角。"],
-  ["review_risks", "审查素材中的推理风险。"],
-  ["synthesize_report", "把已完成的专家结果综合为报告草稿。"],
-  ["review_draft", "对综合草稿进行独立二次审校。"],
-  ["revise_report", "把已保存的审校要求应用到报告。"],
-  ["publish_report", "检查报告是否满足发布条件。"],
+const baselineRequirements = [
+  "analyze_argument",
+  "research_sources",
+  "map_perspectives",
+  "review_risks",
+  "synthesize_report",
+  "review_draft",
+  "revise_report",
+  "publish_report",
 ] as const;
 
 export class ManagerAgentRuntime {
   constructor(
-    private readonly model: LanguageModel,
+    private readonly createSession: ManagerAgentSessionFactory,
     private readonly executor: ManagerAgentToolExecutor,
     private readonly repository: ManagerAgentContextRepository,
   ) {}
 
   async run(input: ManagerAgentRunInput): Promise<ManagerAgentRunResult> {
     let context: ManagerAgentContext | undefined;
+    let session: ExpertSession | undefined;
+    let unsubscribe: (() => void) | undefined;
+    let abort: (() => void) | undefined;
     try {
       context = await loadManagerAgentContext(this.repository, input);
       await this.appendEvent(context, "agent.ui.run.started", {
@@ -98,160 +107,48 @@ export class ManagerAgentRuntime {
         agentId: "manager",
         agentName: "客户经理",
       });
-      const agent = new ToolLoopAgent({
-        model: this.model,
-        instructions: managerAgentInstructions,
-        tools: createAiSdkTools(this.executor, context),
-        stopWhen: stepCountIs(16),
+      const toolContext = {
+        workspaceId: context.workspaceId,
+        agentRunId: context.agentRunId,
+        kind: context.kind,
+        signal: context.signal,
+        ...(context.messageId ? { messageId: context.messageId } : {}),
+        ...(context.target ? { target: context.target } : {}),
+      };
+      const reportAction = createReportActionTool({
+        ...toolContext,
+        runReportAction: (actionInput) => this.executor.runReportAction(actionInput),
       });
-      const stream = await agent.stream({
-        prompt: promptForRun(context),
-        abortSignal: input.signal,
+      session = await this.createSession({
+        systemPrompt: managerAgentInstructions,
+        resourceDir: expertResourceDir("manager"),
+        customTools: context.kind === "challenge"
+          ? [reportAction]
+          : [
+              createDelegateExpertTool({
+                ...toolContext,
+                runExpert: (expertInput) => this.executor.runExpert(expertInput),
+              }),
+              reportAction,
+            ],
       });
-      const toolCalls = new Set<string>();
-      const messageIds = new Map<string, string>();
-      let step = 0;
-      let message = 0;
-      for await (const part of stream.fullStream) {
-        switch (part.type) {
-          case "start-step": {
-            step += 1;
-            await this.appendEvent(context, "agent.ui.step.started", {
-              runId: input.agentRunId,
-              stepName: `agent-step-${step}`,
-            });
-            break;
-          }
-          case "finish-step":
-            await this.appendEvent(context, "agent.ui.step.finished", {
-              runId: input.agentRunId,
-              stepName: `agent-step-${step}`,
-            });
-            break;
-          case "text-start": {
-            const messageId = `${input.agentRunId}:message:${++message}`;
-            messageIds.set(part.id, messageId);
-            await this.appendEvent(context, "agent.ui.text.started", {
-              runId: input.agentRunId,
-              messageId,
-              role: "assistant",
-            });
-            break;
-          }
-          case "text-delta": {
-            const messageId = messageIds.get(part.id);
-            if (messageId && part.text) {
-              await this.appendEvent(context, "agent.ui.text.delta", {
-                runId: input.agentRunId,
-                messageId,
-                text: redactText(part.text),
-              });
-            }
-            break;
-          }
-          case "text-end": {
-            const messageId = messageIds.get(part.id);
-            if (messageId) {
-              await this.appendEvent(context, "agent.ui.text.finished", {
-                runId: input.agentRunId,
-                messageId,
-              });
-            }
-            break;
-          }
-          case "reasoning-start":
-            await this.appendEvent(context, "agent.ui.reasoning.summary", {
-              runId: input.agentRunId,
-              messageId: `${input.agentRunId}:reasoning:${part.id}`,
-              phase: "start",
-            });
-            break;
-          case "reasoning-delta":
-            if (part.text) {
-              await this.appendEvent(context, "agent.ui.reasoning.summary", {
-                runId: input.agentRunId,
-                messageId: `${input.agentRunId}:reasoning:${part.id}`,
-                phase: "content",
-                text: redactText(part.text),
-              });
-            }
-            break;
-          case "reasoning-end":
-            await this.appendEvent(context, "agent.ui.reasoning.summary", {
-              runId: input.agentRunId,
-              messageId: `${input.agentRunId}:reasoning:${part.id}`,
-              phase: "end",
-            });
-            break;
-          case "tool-input-start":
-            toolCalls.add(part.id);
-            await this.appendEvent(context, "agent.ui.tool.started", {
-              runId: input.agentRunId,
-              toolCallId: part.id,
-              toolCallName: part.toolName,
-            });
-            break;
-          case "tool-input-delta":
-            if (part.delta) {
-              await this.appendEvent(context, "agent.ui.tool.args", {
-                runId: input.agentRunId,
-                toolCallId: part.id,
-                delta: redactText(part.delta),
-              });
-            }
-            break;
-          case "tool-input-end":
-            await this.appendEvent(context, "agent.ui.tool.finished", {
-              runId: input.agentRunId,
-              toolCallId: part.id,
-            });
-            break;
-          case "tool-call":
-            if (!toolCalls.has(part.toolCallId)) {
-              toolCalls.add(part.toolCallId);
-              await this.appendEvent(context, "agent.ui.tool.started", {
-                runId: input.agentRunId,
-                toolCallId: part.toolCallId,
-                toolCallName: part.toolName,
-              });
-              await this.appendEvent(context, "agent.ui.tool.args", {
-                runId: input.agentRunId,
-                toolCallId: part.toolCallId,
-                delta: JSON.stringify(redactValue(part.input)),
-              });
-              await this.appendEvent(context, "agent.ui.tool.finished", {
-                runId: input.agentRunId,
-                toolCallId: part.toolCallId,
-              });
-            }
-            break;
-          case "tool-result":
-            await this.appendEvent(context, "agent.ui.tool.result", {
-              runId: input.agentRunId,
-              toolCallId: part.toolCallId,
-              content: redactValue(part.output),
-            });
-            break;
-          case "tool-error":
-            await this.appendEvent(context, "agent.ui.tool.result", {
-              runId: input.agentRunId,
-              toolCallId: part.toolCallId,
-              content: { error: redactError(part.error) },
-            });
-            break;
-        }
-      }
-      if (context.kind === "challenge") {
-        await assertChallengeRunCompleted(this.repository, input, context.messageId);
-      } else {
-        await assertBaselineRunCompleted(this.repository, input);
-      }
+      unsubscribe = session.subscribe(() => {});
+      abort = () => void session?.abort?.();
+      input.signal.addEventListener("abort", abort, { once: true });
+      if (input.signal.aborted) abort();
+      await session.prompt(promptForRun(context));
+      await session.waitForIdle();
       if (input.signal.aborted) {
         await this.appendEvent(context, "agent.ui.run.finished", {
           runId: input.agentRunId,
           outcome: "interrupt",
         });
         return { status: "interrupted" };
+      }
+      if (context.kind === "challenge") {
+        await assertChallengeRunCompleted(this.repository, input, context.messageId);
+      } else {
+        await assertBaselineRunCompleted(this.repository, input);
       }
       await this.appendEvent(context, "agent.ui.run.finished", {
         runId: input.agentRunId,
@@ -276,6 +173,10 @@ export class ManagerAgentRuntime {
         });
       }
       throw error;
+    } finally {
+      if (abort) input.signal.removeEventListener("abort", abort);
+      unsubscribe?.();
+      session?.dispose?.();
     }
   }
 
@@ -303,15 +204,6 @@ function redactText(value: string): string {
   return value
     .replace(/\b(?:sk|rk|pk)[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
     .replace(/((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]");
-}
-
-function redactValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactValue);
-  if (!value || typeof value !== "object") return typeof value === "string" ? redactText(value) : value;
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
-    key,
-    /^(api[_-]?key|authorization|token|password|secret)$/i.test(key) ? "[REDACTED]" : redactValue(child),
-  ]));
 }
 
 function redactError(error: unknown): string {
@@ -465,35 +357,6 @@ function isRevisionArtifact(
   return artifact.kind === "revision";
 }
 
-function createAiSdkTools(
-  executor: ManagerAgentToolExecutor,
-  context: ManagerAgentContext,
-) {
-  const toolContext = {
-    workspaceId: context.workspaceId,
-    agentRunId: context.agentRunId,
-    signal: context.signal,
-    kind: context.kind,
-    completedTools: context.completedTools,
-    ...(context.messageId ? { messageId: context.messageId } : {}),
-    ...(context.target ? { target: context.target } : {}),
-  };
-  const noInputTool = (name: WorkspaceToolName, description: string) =>
-    tool({
-      description,
-      inputSchema: emptyInputSchema,
-      execute: async () => executor.execute(name, toolContext),
-    });
-
-  return context.kind === "challenge" ? {
-    review_target: noInputTool("review_target", "复核当前工作空间中用户质疑的既有报告条目。"),
-  } : Object.fromEntries(
-    baselineToolDefinitions
-      .filter(([name]) => !context.completedTools.includes(name))
-      .map(([name, description]) => [name, noInputTool(name, description)]),
-  );
-}
-
 async function assertBaselineRunCompleted(
   repository: ManagerAgentContextRepository,
   input: ManagerAgentRunInput,
@@ -501,7 +364,7 @@ async function assertBaselineRunCompleted(
   const context = await loadManagerAgentContext(repository, input);
   if (
     context.kind !== "baseline"
-    || baselineToolDefinitions.some(([name]) => !context.completedTools.includes(name))
+    || baselineRequirements.some((name) => !context.completedTools.includes(name))
   ) {
     throw new Error("BASELINE_INCOMPLETE");
   }

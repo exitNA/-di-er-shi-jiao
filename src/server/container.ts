@@ -9,9 +9,6 @@ import {
   type SubmitAnalysisInput,
   type SubmitAnalysisResult,
 } from "@/features/analysis/server/submit-analysis";
-import {
-  createOpenAICompatibleLanguageModel,
-} from "@/server/adapters/ai/openai-compatible-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
 import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
@@ -98,7 +95,7 @@ export function getContainer(): ApplicationContainer {
       now,
     );
     const workspaceAgentRuntime = new ManagerAgentRuntime(
-      createOpenAICompatibleLanguageModel(llmConfig),
+      createExpertSession,
       workspaceToolExecutor,
       analysisRepository,
     );

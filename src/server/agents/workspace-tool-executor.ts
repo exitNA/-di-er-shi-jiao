@@ -65,6 +65,28 @@ export type AgentToolResult =
   | { ok: true; summary: string }
   | { ok: false; code: string };
 
+export type PeerExpertName =
+  | "argument"
+  | "sources"
+  | "perspectives"
+  | "risks"
+  | "synthesis";
+
+export type ReportActionName =
+  | "review_draft"
+  | "revise_report"
+  | "publish_report"
+  | "review_target";
+
+export type RunPeerExpertInput = AgentToolContext & {
+  expert: PeerExpertName;
+  task?: string;
+};
+
+export type RunReportActionInput = AgentToolContext & {
+  action: ReportActionName;
+};
+
 type OwnedWorkspace = {
   job: ExecutionJob;
   snapshot: AnalysisSnapshot;
@@ -101,6 +123,21 @@ export class WorkspaceToolExecutor {
     private readonly repository: AnalysisRepository,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  runExpert(input: RunPeerExpertInput): Promise<AgentToolResult> {
+    const toolNames: Record<PeerExpertName, WorkspaceToolName> = {
+      argument: "analyze_argument",
+      sources: "research_sources",
+      perspectives: "map_perspectives",
+      risks: "review_risks",
+      synthesis: "synthesize_report",
+    };
+    return this.execute(toolNames[input.expert], input);
+  }
+
+  runReportAction(input: RunReportActionInput): Promise<AgentToolResult> {
+    return this.execute(input.action, input);
+  }
 
   async execute(name: WorkspaceToolName, context: AgentToolContext): Promise<AgentToolResult> {
     const owned = await this.assertRunnable(context);
@@ -203,7 +240,7 @@ export class WorkspaceToolExecutor {
     switch (name) {
       case "analyze_argument": {
         const current = owned.snapshot.modules.argument;
-        const generated = await this.runExpert(
+        const generated = await this.trackExpertRun(
           owned.job,
           context.agentRunId,
           "argument",
@@ -217,7 +254,7 @@ export class WorkspaceToolExecutor {
       }
       case "research_sources": {
         const current = owned.snapshot.modules.sources;
-        const generated = await this.runExpert(
+        const generated = await this.trackExpertRun(
           owned.job,
           context.agentRunId,
           "sources",
@@ -231,7 +268,7 @@ export class WorkspaceToolExecutor {
       }
       case "map_perspectives": {
         const current = owned.snapshot.modules.perspectives;
-        const generated = await this.runExpert(
+        const generated = await this.trackExpertRun(
           owned.job,
           context.agentRunId,
           "perspectives",
@@ -245,7 +282,7 @@ export class WorkspaceToolExecutor {
       }
       case "review_risks": {
         const current = owned.snapshot.modules.risks;
-        const generated = await this.runExpert(
+        const generated = await this.trackExpertRun(
           owned.job,
           context.agentRunId,
           "risks",
@@ -274,7 +311,7 @@ export class WorkspaceToolExecutor {
     const experts = independentOutputs(owned.snapshot);
     if (!experts) return failure("REQUIRED_TOOL_UNAVAILABLE");
     const inputVersions = moduleVersions(owned.snapshot);
-    const generated = await this.runExpert(
+    const generated = await this.trackExpertRun(
       owned.job,
       context.agentRunId,
       "synthesis",
@@ -316,7 +353,7 @@ export class WorkspaceToolExecutor {
     ) return failure("REQUIRED_TOOL_UNAVAILABLE");
     const draft = persistedDraft(owned.snapshot);
     if (!draft) return failure("REQUIRED_TOOL_UNAVAILABLE");
-    const generated = await this.runExpert(
+    const generated = await this.trackExpertRun(
       owned.job,
       context.agentRunId,
       "perspectives",
@@ -346,7 +383,7 @@ export class WorkspaceToolExecutor {
     if (artifact?.kind !== "draft_review" || !draft || !experts) {
       return failure("REQUIRED_TOOL_UNAVAILABLE");
     }
-    const generated = await this.runExpert(
+    const generated = await this.trackExpertRun(
       owned.job,
       context.agentRunId,
       "synthesis",
@@ -480,7 +517,7 @@ export class WorkspaceToolExecutor {
       if (!current.payload) throw codedError("REQUIRED_TOOL_UNAVAILABLE");
       const sources = (execution.snapshot.modules.sources.payload as SourcesModule | undefined)?.sources ?? [];
       const allowedSourceIds = new Set(sources.map((source) => source.id));
-      const generated = await this.runExpert(
+      const generated = await this.trackExpertRun(
         execution.job,
         context.agentRunId,
         "synthesis",
@@ -623,7 +660,7 @@ export class WorkspaceToolExecutor {
     return { job, snapshot };
   }
 
-  private async runExpert<T>(
+  private async trackExpertRun<T>(
     job: ExecutionJob,
     agentRunId: string,
     expertType: "argument" | "sources" | "perspectives" | "risks" | "synthesis",

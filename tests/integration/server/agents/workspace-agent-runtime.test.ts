@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { simulateReadableStream } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import { ManagerAgentRuntime } from "@/server/agents/manager/agent";
@@ -11,24 +10,28 @@ describe("ManagerAgentRuntime challenge context", () => {
     const target = { moduleType: "risks", section: "items", itemId: "risk-1" } as const;
     const snapshot = challengeSnapshot(target);
     const executed: Array<{ name: WorkspaceToolName; context: AgentToolContext }> = [];
-    let generated = false;
-    const model = new MockLanguageModelV4({
-      doStream: async () => {
-        const review = !generated;
-        generated = true;
-        return streamResult(review ? [{
-          type: "tool-call" as const,
-          toolCallId: "call-1",
-          toolName: "review_target",
-          input: "{}",
-        }] : [{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], review ? "tool-calls" : "stop");
-      },
-    });
+    let customTools: ToolDefinition[] = [];
     const runtime = new ManagerAgentRuntime(
-      model,
+      async (input) => {
+        customTools = input.customTools;
+        return managerSession(async () => {
+          const tool = input.customTools.find((candidate) => candidate.name === "report_action");
+          if (!tool) throw new Error("Missing report action tool");
+          await tool.execute(
+            "call-1",
+            { action: "review_target" },
+            undefined,
+            undefined,
+            undefined as never,
+          );
+        });
+      },
       {
-        async execute(name, context) {
-          executed.push({ name, context });
+        async runExpert() {
+          return { ok: false, code: "TOOL_NOT_ALLOWED" };
+        },
+        async runReportAction(context) {
+          executed.push({ name: context.action, context });
           snapshot.toolCalls = [{
             id: "tool-call-1",
             agentRunId: "run-1",
@@ -75,15 +78,14 @@ describe("ManagerAgentRuntime challenge context", () => {
 
     await runtime.run({ workspaceId: "workspace-1", agentRunId: "run-1", signal });
 
-    expect(model.doStreamCalls[0]?.tools?.map((tool) => tool.name)).toEqual(["review_target"]);
+    expect(customTools.map((tool) => tool.name)).toEqual(["report_action"]);
     expect(executed).toEqual([{
       name: "review_target",
       context: {
         workspaceId: "workspace-1",
         agentRunId: "run-1",
         signal,
-        kind: "challenge",
-        completedTools: [],
+        action: "review_target",
         messageId: "message-1",
         target,
       },
@@ -93,10 +95,11 @@ describe("ManagerAgentRuntime challenge context", () => {
   it("rejects a challenge run when the model stops before a completed review_target", async () => {
     const target = { moduleType: "risks", section: "items", itemId: "risk-1" } as const;
     const runtime = new ManagerAgentRuntime(
-      new MockLanguageModelV4({
-        doStream: async () => streamResult([{ type: "text-start" as const, id: "text-1" }, { type: "text-delta" as const, id: "text-1", delta: "done" }, { type: "text-end" as const, id: "text-1" }], "stop"),
-      }),
-      { async execute() { return { ok: true, summary: "unused" }; } },
+      async () => managerSession(),
+      {
+        async runExpert() { return { ok: true, summary: "unused" }; },
+        async runReportAction() { return { ok: true, summary: "unused" }; },
+      },
       {
         async getJobForExecution() {
           return {
@@ -168,17 +171,10 @@ function challengeSnapshot(
   };
 }
 
-function streamResult(chunks: object[], finishReason: "stop" | "tool-calls") {
+function managerSession(prompt: () => Promise<void> = async () => {}) {
   return {
-    stream: simulateReadableStream({
-      chunks: [...chunks, {
-        type: "finish" as const,
-        finishReason: { unified: finishReason, raw: undefined },
-        usage: {
-          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 1, text: 1, reasoning: 0 },
-        },
-      }],
-    }),
+    prompt,
+    async waitForIdle() {},
+    subscribe() { return () => {}; },
   };
 }

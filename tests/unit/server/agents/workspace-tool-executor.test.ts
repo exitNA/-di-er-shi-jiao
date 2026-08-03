@@ -226,13 +226,13 @@ describe("WorkspaceToolExecutor", () => {
       completedAt: now.toISOString(),
     })));
 
-    await expect(executor.execute("analyze_argument", context)).resolves.toMatchObject({ ok: true });
+    await expect(executor.runExpert({ ...context, expert: "argument" })).resolves.toMatchObject({ ok: true });
   });
 
   it("refuses publication until synthesis and second review succeeded", async () => {
     const { executor, context } = setup();
 
-    const result = await executor.execute("publish_report", context);
+    const result = await executor.runReportAction({ ...context, action: "publish_report" });
 
     expect(result).toEqual({ ok: false, code: "REQUIRED_TOOL_UNAVAILABLE" });
   });

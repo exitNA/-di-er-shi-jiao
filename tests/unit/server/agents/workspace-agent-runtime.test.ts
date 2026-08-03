@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { simulateReadableStream } from "ai";
-import { MockLanguageModelV4 } from "ai/test";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import type { NewAnalysisEvent } from "@/features/analysis/server/analysis-repository";
@@ -8,10 +7,11 @@ import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace
 import {
   ManagerAgentRuntime,
   type ManagerAgentContextRepository,
+  type ManagerAgentSessionInput,
 } from "@/server/agents/manager/agent";
 import {
-  workspaceToolNames,
-  type AgentToolContext,
+  type RunPeerExpertInput,
+  type RunReportActionInput,
   type WorkspaceToolExecutor,
   type WorkspaceToolName,
 } from "@/server/agents/workspace-tool-executor";
@@ -20,17 +20,26 @@ const workspaceId = "workspace-1";
 const agentRunId = "run-1";
 
 describe("ManagerAgentRuntime", () => {
-  it("runs ToolLoopAgent with only workspace tools and server-owned context", async () => {
+  it("runs a Pi session with peer delegation and server-owned context", async () => {
     const repository = baselineRepository();
     const executor = recordingExecutor(repository.complete);
-    const model = toolLoopModel([
-      ["analyze_argument", "research_sources", "map_perspectives", "review_risks"],
-      ["synthesize_report"],
-      ["review_draft"],
-      ["revise_report"],
-      ["publish_report"],
-    ]);
-    const runtime = new ManagerAgentRuntime(model, executor, repository);
+    let sessionInput: ManagerAgentSessionInput | undefined;
+    const session = managerSession(async (tools) => {
+      const delegate = toolByName(tools, "delegate_expert");
+      const action = toolByName(tools, "report_action");
+      for (const expert of ["risks", "argument", "sources", "perspectives", "synthesis"] as const) {
+        await executeTool(delegate, { expert });
+      }
+      for (const reportAction of ["review_draft", "revise_report", "publish_report"] as const) {
+        await executeTool(action, { action: reportAction });
+      }
+    });
+    const createSession = vi.fn(async (input: ManagerAgentSessionInput) => {
+      sessionInput = input;
+      session.tools = input.customTools;
+      return session;
+    });
+    const runtime = new ManagerAgentRuntime(createSession, executor, repository);
     const signal = new AbortController().signal;
 
     await expect(runtime.run({ workspaceId, agentRunId, signal })).resolves.toEqual({
@@ -38,50 +47,42 @@ describe("ManagerAgentRuntime", () => {
     });
 
     expect(executor.executed).toEqual([
+      "review_risks",
       "analyze_argument",
       "research_sources",
       "map_perspectives",
-      "review_risks",
       "synthesize_report",
       "review_draft",
       "revise_report",
       "publish_report",
     ]);
     expect(executor.contexts).toEqual(
-      executor.executed.map(() => ({
+      executor.executed.map(() => expect.objectContaining({
         workspaceId,
         agentRunId,
         signal,
-        kind: "baseline",
-        completedTools: [],
       })),
     );
-    expect(
-      model.doStreamCalls[0]?.tools?.map((candidate) => candidate.name).sort(),
-    ).toEqual(workspaceToolNames.filter((name) => name !== "review_target").sort());
-    expect(model.doStreamCalls[0]?.abortSignal).toBe(signal);
-    expect(repository.events.map((event) => event.eventType)).toEqual(expect.arrayContaining([
+    expect(sessionInput?.customTools.map((tool) => tool.name)).toEqual([
+      "delegate_expert",
+      "report_action",
+    ]);
+    expect(session.subscribe).toHaveBeenCalledOnce();
+    expect(session.prompt).toHaveBeenCalledWith(expect.stringContaining("基线分析"));
+    expect(repository.events.map((event) => event.eventType)).toEqual([
       "agent.ui.run.started",
-      "agent.ui.step.started",
-      "agent.ui.tool.started",
-      "agent.ui.tool.args",
-      "agent.ui.tool.result",
-      "agent.ui.text.delta",
       "agent.ui.run.finished",
-    ]));
+    ]);
   });
 
   it("returns interrupted when Agent generation is cancelled", async () => {
     const controller = new AbortController();
     controller.abort();
-    const model = new MockLanguageModelV4({
-      doGenerate: async ({ abortSignal }) => {
-        expect(abortSignal).toBe(controller.signal);
-        throw abortSignal?.reason;
-      },
+    const session = managerSession(async () => {
+      throw controller.signal.reason;
     });
     const runtime = new ManagerAgentRuntime(
-      model,
+      async () => session,
       recordingExecutor(),
       baselineRepository(),
     );
@@ -89,14 +90,12 @@ describe("ManagerAgentRuntime", () => {
     await expect(
       runtime.run({ workspaceId, agentRunId, signal: controller.signal }),
     ).resolves.toEqual({ status: "interrupted" });
+    expect(session.abort).toHaveBeenCalledOnce();
   });
 
   it("rejects a baseline run when the model stops before publishing a valid report", async () => {
-    const model = new MockLanguageModelV4({
-      doStream: async () => textStream("done"),
-    });
     const runtime = new ManagerAgentRuntime(
-      model,
+      async () => managerSession(),
       recordingExecutor(),
       baselineRepository(),
     );
@@ -108,35 +107,27 @@ describe("ManagerAgentRuntime", () => {
     })).rejects.toThrow("BASELINE_INCOMPLETE");
   });
 
-  it("rejects a baseline run when the model exhausts the tool-loop step limit", async () => {
-    const model = new MockLanguageModelV4({
-      doStream: async () => toolStream(["analyze_argument"]),
-    });
-    const runtime = new ManagerAgentRuntime(
-      model,
-      recordingExecutor(),
-      baselineRepository(),
-    );
-
-    await expect(runtime.run({
-      workspaceId,
-      agentRunId,
-      signal: new AbortController().signal,
-    })).rejects.toThrow("BASELINE_INCOMPLETE");
-    expect(model.doStreamCalls).toHaveLength(16);
-  });
-
-  it("does not expose a baseline tool whose module was durably completed before cancellation", async () => {
+  it("resumes from durable work without forcing a fixed peer sequence", async () => {
     const repository = baselineRepository({ argumentCompleted: true });
     const executor = recordingExecutor(repository.complete);
-    const model = toolLoopModel([
-      ["research_sources", "map_perspectives", "review_risks"],
-      ["synthesize_report"],
-      ["review_draft"],
-      ["revise_report"],
-      ["publish_report"],
-    ]);
-    const runtime = new ManagerAgentRuntime(model, executor, repository);
+    const runtime = new ManagerAgentRuntime(
+      async (input) => {
+        const session = managerSession(async (tools) => {
+          const delegate = toolByName(tools, "delegate_expert");
+          const action = toolByName(tools, "report_action");
+          for (const expert of ["sources", "risks", "perspectives", "synthesis"] as const) {
+            await executeTool(delegate, { expert });
+          }
+          for (const reportAction of ["review_draft", "revise_report", "publish_report"] as const) {
+            await executeTool(action, { action: reportAction });
+          }
+        });
+        session.tools = input.customTools;
+        return session;
+      },
+      executor,
+      repository,
+    );
 
     await expect(runtime.run({
       workspaceId,
@@ -144,28 +135,38 @@ describe("ManagerAgentRuntime", () => {
       signal: new AbortController().signal,
     })).resolves.toEqual({ status: "completed" });
 
-    expect(model.doStreamCalls[0]?.tools?.map((candidate) => candidate.name)).not.toContain(
-      "analyze_argument",
-    );
     expect(executor.executed).not.toContain("analyze_argument");
   });
 });
 
 function recordingExecutor(onExecute?: (name: WorkspaceToolName) => void) {
   const executed: WorkspaceToolName[] = [];
-  const contexts: AgentToolContext[] = [];
+  const contexts: Array<RunPeerExpertInput | RunReportActionInput> = [];
+  const complete = (name: WorkspaceToolName, context: RunPeerExpertInput | RunReportActionInput) => {
+    executed.push(name);
+    contexts.push(context);
+    onExecute?.(name);
+    return Promise.resolve({ ok: true as const, summary: `${name} completed` });
+  };
   return {
     executed,
     contexts,
-    async execute(name: WorkspaceToolName, context: AgentToolContext) {
-      executed.push(name);
-      contexts.push(context);
-      onExecute?.(name);
-      return { ok: true as const, summary: `${name} completed` };
+    runExpert(input: RunPeerExpertInput) {
+      const names = {
+        argument: "analyze_argument",
+        sources: "research_sources",
+        perspectives: "map_perspectives",
+        risks: "review_risks",
+        synthesis: "synthesize_report",
+      } as const;
+      return complete(names[input.expert], input);
     },
-  } satisfies Pick<WorkspaceToolExecutor, "execute"> & {
+    runReportAction(input: RunReportActionInput) {
+      return complete(input.action, input);
+    },
+  } satisfies Pick<WorkspaceToolExecutor, "runExpert" | "runReportAction"> & {
     executed: WorkspaceToolName[];
-    contexts: AgentToolContext[];
+    contexts: Array<RunPeerExpertInput | RunReportActionInput>;
   };
 }
 
@@ -365,44 +366,24 @@ function moduleVersions(argument = 1) {
   };
 }
 
-function toolLoopModel(steps: WorkspaceToolName[][]): MockLanguageModelV4 {
-  let call = 0;
-  return new MockLanguageModelV4({
-    doStream: async () => {
-      const toolNames = steps[call++];
-      return toolNames ? toolStream(toolNames, call) : textStream("done");
-    },
-  });
-}
-
-function textStream(text: string) {
-  return streamResult([
-    { type: "text-start" as const, id: "text-1" },
-    { type: "text-delta" as const, id: "text-1", delta: text },
-    { type: "text-end" as const, id: "text-1" },
-  ], "stop");
-}
-
-function toolStream(toolNames: WorkspaceToolName[], call = 0) {
-  return streamResult(toolNames.map((toolName, index) => ({
-    type: "tool-call" as const,
-    toolCallId: `call-${call}-${index}`,
-    toolName,
-    input: "{}",
-  })), "tool-calls");
-}
-
-function streamResult(chunks: object[], finishReason: "stop" | "tool-calls") {
+function managerSession(run?: (tools: ToolDefinition[]) => Promise<void>) {
+  let tools: ToolDefinition[] = [];
   return {
-    stream: simulateReadableStream({
-      chunks: [...chunks, {
-        type: "finish" as const,
-        finishReason: { unified: finishReason, raw: undefined },
-        usage: {
-          inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
-          outputTokens: { total: 1, text: 1, reasoning: 0 },
-        },
-      }],
-    }),
+    set tools(value: ToolDefinition[]) { tools = value; },
+    prompt: vi.fn(async () => run?.(tools)),
+    waitForIdle: vi.fn(),
+    subscribe: vi.fn(() => () => {}),
+    abort: vi.fn(),
+    dispose: vi.fn(),
   };
+}
+
+function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
+  const tool = tools.find((candidate) => candidate.name === name);
+  if (!tool) throw new Error(`Missing tool: ${name}`);
+  return tool;
+}
+
+function executeTool(tool: ToolDefinition, params: Record<string, unknown>) {
+  return tool.execute("call", params, undefined, undefined, undefined as never);
 }
