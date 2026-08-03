@@ -112,6 +112,7 @@ logs/
 .nyc_output
 # Environment variables
 .env.local
+.env.langfuse.local
 .env.development.local
 .env.test.local
 .env.production.local

@@ -1,7 +1,10 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { expect, it } from "vitest";
 
+const run = promisify(execFile);
 const read = (file: string) => readFile(join(process.cwd(), file), "utf8");
 
 it("starts Langfuse with generated local credentials and persistent services", async () => {
@@ -22,4 +25,12 @@ it("starts Langfuse with generated local credentials and persistent services", a
 
 it("keeps the Langfuse stack separate from the application Compose project", async () => {
   await expect(read("compose.langfuse.yaml")).resolves.toMatch(/^name: second-perspective-langfuse$/m);
+});
+
+it("ignores generated local Langfuse credentials", async () => {
+  await expect(run("git", ["check-ignore", "--quiet", ".env.langfuse.local"])).resolves.toBeDefined();
+});
+
+it("binds the Langfuse web interface to the local loopback address", async () => {
+  await expect(read("compose.langfuse.yaml")).resolves.toContain('"127.0.0.1:3000:3000"');
 });
