@@ -30,6 +30,11 @@ export async function createPiSession(input: PiSessionInput): Promise<AgentSessi
     noContextFiles: true,
     systemPromptOverride: () => input.systemPrompt,
     appendSystemPromptOverride: () => [],
+    extensionFactories: [
+      (pi) => {
+        pi.on("before_agent_start", () => ({ systemPrompt: input.systemPrompt }));
+      },
+    ],
   });
   await loader.reload();
 
@@ -42,7 +47,6 @@ export async function createPiSession(input: PiSessionInput): Promise<AgentSessi
     settingsManager,
     modelRuntime: input.modelRuntime,
   });
-  session.agent.state.systemPrompt = input.systemPrompt;
 
   return session;
 }
