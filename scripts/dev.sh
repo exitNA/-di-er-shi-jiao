@@ -9,7 +9,7 @@ DEPLOY_RUN_PORT="${DEPLOY_RUN_PORT:-${PORT}}"
 
 cd "${COZE_WORKSPACE_PATH}"
 
-for env_file in .env .env.local .env.langfuse.local; do
+for env_file in .env; do
   if [[ -f "${env_file}" ]]; then
     set -a
     . "./${env_file}"

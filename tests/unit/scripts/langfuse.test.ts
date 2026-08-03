@@ -27,8 +27,9 @@ it("keeps the Langfuse stack separate from the application Compose project", asy
   await expect(read("compose.langfuse.yaml")).resolves.toMatch(/^name: second-perspective-langfuse$/m);
 });
 
-it("ignores generated local Langfuse credentials", async () => {
-  await expect(run("git", ["check-ignore", "--quiet", ".env.langfuse.local"])).resolves.toBeDefined();
+it("stores generated local Langfuse credentials in the ignored .env file", async () => {
+  await expect(run("git", ["check-ignore", "--quiet", ".env"])).resolves.toBeDefined();
+  await expect(read("scripts/langfuse-up.sh")).resolves.not.toContain(".env.langfuse.local");
 });
 
 it("binds the Langfuse web interface to the local loopback address", async () => {
@@ -77,5 +78,6 @@ it("waits for real Langfuse Web and Worker HTTP readiness", async () => {
   expect(services["langfuse-worker"]?.healthcheck?.test?.join(" ")).toContain(
     ":3030/",
   );
+  expect(startup).toContain("--env-file .env");
   expect(startup).toContain("--wait --wait-timeout 180");
 });

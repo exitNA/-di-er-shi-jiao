@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -8,13 +8,13 @@ import { expect, it } from "vitest";
 const run = promisify(execFile);
 const devScript = join(process.cwd(), "scripts/dev.sh");
 
-it("loads required development settings from .env files without printing them", async () => {
+it("loads required development settings from .env without printing them", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "second-perspective-dev-"));
   const bin = join(fixture, "bin");
   const secret = "local-dev-secret-must-not-appear";
   await mkdir(bin);
-  await writeFile(join(fixture, ".env"), "ANALYSIS_RUNTIME=in-process\n");
-  await writeFile(join(fixture, ".env.local"), [
+  await writeFile(join(fixture, ".env"), [
+    "ANALYSIS_RUNTIME=in-process",
     "APP_URL=http://127.0.0.1:5000",
     "DATABASE_URL=postgres://app:app@127.0.0.1:54329/second_perspective_test",
     "AUTH_SECRET=local-development-auth-secret-at-least-32-bytes",
@@ -22,8 +22,7 @@ it("loads required development settings from .env files without printing them", 
     `LLM_API_KEY=${secret}`,
     "LLM_MODEL_ID=test-model",
     "TAVILY_API_KEY=test-tavily-key",
-  ].join("\n"));
-  await writeFile(join(fixture, ".env.langfuse.local"), [
+    "TAVILY_API_KEY=test-tavily-key",
     "LANGFUSE_BASE_URL=http://127.0.0.1:3000",
     "LANGFUSE_PUBLIC_KEY=pk-lf-test",
     "LANGFUSE_SECRET_KEY=sk-lf-test",
@@ -60,6 +59,7 @@ printf 'development environment loaded\\n'
 
     expect(stdout).toContain("development environment loaded");
     expect(stdout).not.toContain(secret);
+    await expect(readFile(devScript, "utf8")).resolves.toContain("for env_file in .env; do");
   } finally {
     await rm(fixture, { force: true, recursive: true });
   }

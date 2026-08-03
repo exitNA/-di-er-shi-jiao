@@ -9,6 +9,11 @@ DEPLOY_RUN_PORT="${DEPLOY_RUN_PORT:-$PORT}"
 
 start_service() {
     cd "${COZE_WORKSPACE_PATH}"
+    if [ -f .env ]; then
+        set -a
+        . ./.env
+        set +a
+    fi
     legacy_endpoint='OTEL_EXPORTER_OTLP_''ENDPOINT'
     legacy_exporter='OTLPTrace''Exporter'
     legacy_schema="${legacy_endpoint}[^;]{0,300}\\.string\\(\\)\\.url\\(\\)\\.optional"

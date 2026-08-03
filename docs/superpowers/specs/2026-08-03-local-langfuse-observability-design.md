@@ -38,7 +38,7 @@ Pi event 负责将模型 turn、文本、工具开始/结束与错误映射为 g
 
 ## 本地使用
 
-提供 `pnpm langfuse:up` 与 `pnpm langfuse:down`。启动命令生成本地随机 secrets、启动服务并等待健康状态；首次启动预置本地组织、项目、管理员和项目 API key，将应用连接信息写入未跟踪的 `.env.langfuse.local`。停止命令不删除 volumes，保留调试历史。
+提供 `pnpm langfuse:up` 与 `pnpm langfuse:down`。启动命令将缺失的本地 secrets 写入未跟踪的 `.env`，启动服务并等待健康状态；首次启动预置本地组织、项目、管理员和项目 API key。停止命令不删除 volumes，保留调试历史。
 
 ## 验证
 

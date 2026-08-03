@@ -10,14 +10,14 @@
 
 ```bash
 pnpm install
-cp .env.example .env.local
+cp .env.example .env
 openssl rand -hex 32
 pnpm db:init:dev
 pnpm langfuse:up
 pnpm dev
 ```
 
-把 `openssl` 输出写入 `.env.local` 的 `AUTH_SECRET`，然后访问
+把 `openssl` 输出写入 `.env` 的 `AUTH_SECRET`，然后访问
 <http://localhost:5000/register>。运行需要真实模型和 `DATABASE_URL`：
 配置 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；
 配置 `TAVILY_API_KEY` 后启用在线搜索。后台可使用 `in-process` 或 Trigger.dev。
@@ -25,9 +25,8 @@ pnpm dev
 ## 本地 Langfuse
 
 `pnpm langfuse:up` 启动独立的本地 Langfuse 栈，并在未跟踪的
-`.env.langfuse.local` 生成项目连接信息和服务密钥。将其中的 `LANGFUSE_*`
-值复制到 `.env.local` 后启动应用；访问 <http://localhost:3000>，管理员密码可在
-`.env.langfuse.local` 的 `LANGFUSE_INIT_USER_PASSWORD` 中查看。停止服务使用
+`.env` 生成项目连接信息和服务密钥。访问 <http://localhost:3000>，管理员密码可在
+`.env` 的 `LANGFUSE_INIT_USER_PASSWORD` 中查看。停止服务使用
 `pnpm langfuse:down`；该命令保留观察数据卷。
 
 ## 集成测试
@@ -39,7 +38,7 @@ pnpm test:integration
 pnpm test:db:down
 ```
 
-这两个命令不读取 `.env` 或 `.env.local`。
+这两个命令不读取 `.env`。
 
 完整的数据库、真实模型、Tavily、Trigger.dev、恢复、监控、评测、回滚和发布步骤见
 [MVP 基线运维手册](docs/operations/mvp-baseline.md)。质量人工评审口径见

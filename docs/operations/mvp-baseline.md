@@ -8,19 +8,19 @@
 
 ```bash
 pnpm install --frozen-lockfile
-cp .env.example .env.local
+cp .env.example .env
 openssl rand -hex 32
 ```
 
-把最后一条命令的输出写入 `.env.local` 的 `AUTH_SECRET`。不要提交 `.env.local`。
+把最后一条命令的输出写入 `.env` 的 `AUTH_SECRET`。不要提交 `.env`。
 
 ## 2. 数据库、迁移、测试清理与备份
 
-启动本地开发 PostgreSQL，并使用 `.env.local` 的 `DATABASE_URL` 执行迁移：
+启动本地开发 PostgreSQL，并使用 `.env` 的 `DATABASE_URL` 执行迁移：
 
 ```bash
 set -a
-. ./.env.local
+. ./.env
 set +a
 pnpm db:init:dev
 ```
@@ -32,7 +32,7 @@ pnpm test:integration
 pnpm test:db:down
 ```
 
-这两个命令不读取 `.env` 或 `.env.local`。
+这两个命令不读取 `.env`。
 
 迁移或发布前使用当前环境的 `DATABASE_URL` 备份，文件权限保持仅当前用户可读：
 
@@ -51,7 +51,7 @@ dropdb second_perspective_restore_check
 
 ## 3. 本地真实 Agent 运行
 
-`.env.local` 至少包含：
+`.env` 至少包含：
 
 ```dotenv
 APP_URL=http://localhost:5000
@@ -92,11 +92,11 @@ LLM_OUTPUT_USD_PER_MILLION=<non-negative-number>
 
 需要联网搜索时再额外配置 `TAVILY_API_KEY=<secret>`。
 
-CLI 脚本不依赖 Next.js 加载 `.env.local`；在本地先把已填写的文件导出到当前终端：
+CLI 脚本不依赖 Next.js 加载 `.env`；在本地先把已填写的文件导出到当前终端：
 
 ```bash
 set -a
-. ./.env.local
+. ./.env
 set +a
 ```
 
@@ -205,16 +205,16 @@ pnpm exec trigger.dev deploy
 pnpm langfuse:up
 ```
 
-该命令首次运行时生成未跟踪的 `.env.langfuse.local`，预置本地组织、项目、管理员和项目 API key。将其中以下四个 `LANGFUSE_*` 值复制到 `.env.local`，并为 Trigger.dev worker 配置相同值：
+该命令首次运行时将缺失参数写入未跟踪的 `.env`，预置本地组织、项目、管理员和项目 API key。为 Trigger.dev worker 配置相同值：
 
 ```dotenv
 LANGFUSE_BASE_URL=http://localhost:3000
-LANGFUSE_PUBLIC_KEY=<.env.langfuse.local 中的值>
-LANGFUSE_SECRET_KEY=<.env.langfuse.local 中的值>
+LANGFUSE_PUBLIC_KEY=<.env 中的值>
+LANGFUSE_SECRET_KEY=<.env 中的值>
 LANGFUSE_TRACING_ENVIRONMENT=local
 ```
 
-重启 Web 应用和 Trigger.dev worker 后访问 <http://localhost:3000>，使用 `local@example.com` 和 `.env.langfuse.local` 中的 `LANGFUSE_INIT_USER_PASSWORD` 登录。详细的原始材料、system prompt、模型消息与输出、工具完整输入与结果、信源 URL、token、估算成本、错误和取消状态只进入 Langfuse observation；结构化日志和前端 SSE 继续使用既有脱敏数据。
+重启 Web 应用和 Trigger.dev worker 后访问 <http://localhost:3000>，使用 `local@example.com` 和 `.env` 中的 `LANGFUSE_INIT_USER_PASSWORD` 登录。详细的原始材料、system prompt、模型消息与输出、工具完整输入与结果、信源 URL、token、估算成本、错误和取消状态只进入 Langfuse observation；结构化日志和前端 SSE 继续使用既有脱敏数据。
 
 执行一次包含在线搜索的分析，并在 Langfuse UI 中验收：
 

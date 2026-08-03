@@ -21,7 +21,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:up": "docker compose up -d postgres",
-    "db:init:dev": "docker compose up -d --wait postgres && set -a && . ./.env.local && set +a && pnpm db:migrate",
+    "db:init:dev": "docker compose up -d --wait postgres && set -a && . ./.env && set +a && pnpm db:migrate",
     "db:down": "docker compose down",
     "langfuse:up": "sh ./scripts/langfuse-up.sh",
     "langfuse:down": "sh ./scripts/langfuse-down.sh",

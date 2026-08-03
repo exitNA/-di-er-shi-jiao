@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-docker compose --env-file .env.langfuse.local -f compose.langfuse.yaml down
+docker compose --env-file .env -f compose.langfuse.yaml down
