@@ -84,8 +84,15 @@ export async function bridgePiEvent(
 export function redactPiText(value: string): string {
   return value
     .replace(/\b(?:sk|rk|pk)[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
-    .replace(/(authorization\s*[:=]\s*)(?:bearer\s+)?[^\s,"'}]+/gi, "$1[REDACTED]")
-    .replace(/((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]");
+    .replace(
+      /(["']?(?:api[_-]?key|authorization|token|password|secret)["']?\s*[:=]\s*)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\r\n,}\]]+)/gi,
+      (_match, prefix: string, sensitiveValue: string) => {
+        const quote = sensitiveValue[0] === '"' || sensitiveValue[0] === "'"
+          ? sensitiveValue[0]
+          : "";
+        return `${prefix}${quote}[REDACTED]${quote}`;
+      },
+    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

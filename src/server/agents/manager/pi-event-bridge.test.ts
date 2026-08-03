@@ -74,6 +74,28 @@ describe("bridgePiEvent", () => {
     expect(serialized).toContain("[REDACTED]");
   });
 
+  it.each([
+    '{"api_key":"top-secret"}',
+    '{"token":"actual-secret"}',
+    '{"authorization":"Bearer actual-secret"}',
+    'Authorization: "Bearer actual-secret"',
+    'password="two word secret"',
+  ])("redacts quoted credential values from assistant events: %s", async (text) => {
+    const appendEvent = vi.fn(async () => 1);
+    const context = { runId: "run-1", appendEvent };
+
+    await bridgePiEvent({ type: "turn_start" }, context);
+    await bridgePiEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: text },
+    }, context);
+    await bridgePiEvent({ type: "turn_end" }, context);
+
+    const serialized = JSON.stringify(appendEvent.mock.calls);
+    expect(serialized).toContain("[REDACTED]");
+    expect(serialized).not.toMatch(/top-secret|actual-secret|two word secret/);
+  });
+
   it("maps lifecycle events without publishing thinking or tool details", async () => {
     const appendEvent = vi.fn(async () => 1);
     const context = { runId: "run-1", appendEvent };

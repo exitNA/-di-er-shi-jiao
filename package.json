@@ -29,7 +29,6 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "^3.0.20",
     "@earendil-works/pi-coding-agent": "^0.83.0",
     "@logtape/logtape": "^2.3.0",
     "@node-rs/argon2": "^2.0.2",
@@ -65,7 +64,6 @@
     "@radix-ui/react-toggle-group": "^1.1.19",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@trigger.dev/sdk": "^4.5.9",
-    "ai": "^7.0.47",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -1,75 +1,83 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { Output, streamText, ToolLoopAgent, tool } from "ai";
-import { z } from "zod";
+import { resolve } from "node:path";
+import { defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+
 import { loadServerEnv } from "../src/server/config/env";
+import {
+  createPiSession,
+  createProjectPiModelRuntime,
+} from "../src/server/agents/shared/pi-session";
 
 export async function runLlmProbe() {
   const env = loadServerEnv();
-  const provider = createOpenAICompatible({
-    name: "secondPerspective",
+  const { model, modelRuntime } = await createProjectPiModelRuntime({
+    baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
-    baseURL: env.LLM_BASE_URL.replace(/\/$/, ""),
-    supportsStructuredOutputs: true,
+    modelId: env.LLM_MODEL_ID,
+  });
+  let submitted: { chinese: "通过"; evidence: string } | undefined;
+  const complete = defineTool({
+    name: "complete_probe",
+    label: "Complete probe",
+    description: "Submit the probe result.",
+    parameters: Type.Object({
+      chinese: Type.Literal("通过"),
+      evidence: Type.String({ minLength: 1 }),
+    }),
+    async execute(_id, params) {
+      submitted = params;
+      return {
+        content: [{ type: "text" as const, text: "accepted" }],
+        details: { accepted: true },
+        terminate: true,
+      };
+    },
+  });
+  const session = await createPiSession({
+    model,
+    modelRuntime,
+    customTools: [complete],
+    resourceDir: resolve(process.cwd(), "src/server/agents/manager"),
+    systemPrompt: "调用 complete_probe 提交 chinese=通过 和非空 evidence。",
   });
   const startedAt = performance.now();
-  const agent = new ToolLoopAgent({
-    model: provider(env.LLM_MODEL_ID),
-    tools: {
-      echo: tool({
-        description: "Echoes a message exactly.",
-        inputSchema: z.object({ message: z.string() }),
-        execute: async ({ message }) => message,
-      }),
-    },
-    prepareStep: ({ stepNumber }) => ({
-      toolChoice: stepNumber === 0 ? "required" : "none",
-    }),
-    output: Output.object({
-      schema: z.object({
-        chinese: z.literal("通过"),
-        evidence: z.string().min(1),
-      }),
-    }),
+  let streamedEvents = 0;
+  const unsubscribe = session.subscribe((event) => {
+    if (event.type === "message_update") streamedEvents += 1;
   });
-  const structured = await agent.generate({
-    prompt: "Call echo with a short message, then return the required structured result.",
-  });
-  const streamed = await streamText({
-    model: provider(env.LLM_MODEL_ID),
-    prompt: "Reply with one short sentence.",
-  });
-  let textChunks = 0;
-  for await (const chunk of streamed.textStream) {
-    if (chunk) textChunks += 1;
-  }
-  if (textChunks === 0) throw new Error("LLM stream contained no text chunks");
 
-  return {
-    modelId: env.LLM_MODEL_ID,
-    structuredOutput: structured.output.chinese === "通过" && structured.output.evidence.length > 0,
-    toolCall: structured.toolCalls.some((call) => call.toolName === "echo"),
-    streamedText: textChunks > 0,
-    inputTokens: (structured.usage.inputTokens ?? 0) + ((await streamed.usage).inputTokens ?? 0),
-    outputTokens: (structured.usage.outputTokens ?? 0) + ((await streamed.usage).outputTokens ?? 0),
-    latencyMs: Math.round(performance.now() - startedAt),
-  };
+  try {
+    await session.prompt("执行连通性检查。");
+    await session.waitForIdle();
+    const stats = session.getSessionStats().tokens;
+    return {
+      modelId: env.LLM_MODEL_ID,
+      structuredOutput: submitted?.chinese === "通过" && submitted.evidence.length > 0,
+      toolCall: submitted !== undefined,
+      streamedEvents: streamedEvents > 0,
+      inputTokens: stats.input,
+      outputTokens: stats.output,
+      latencyMs: Math.round(performance.now() - startedAt),
+    };
+  } finally {
+    unsubscribe();
+    session.dispose();
+  }
 }
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
   runLlmProbe()
     .then((result) => console.log(JSON.stringify(result)))
     .catch(() => {
-      console.error(
-        JSON.stringify({
-          modelId: process.env.LLM_MODEL_ID ?? "",
-          structuredOutput: false,
-          toolCall: false,
-          streamedText: false,
-          inputTokens: 0,
-          outputTokens: 0,
-          latencyMs: 0,
-        }),
-      );
+      console.error(JSON.stringify({
+        modelId: process.env.LLM_MODEL_ID ?? "",
+        structuredOutput: false,
+        toolCall: false,
+        streamedEvents: false,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs: 0,
+      }));
       process.exitCode = 1;
     });
 }

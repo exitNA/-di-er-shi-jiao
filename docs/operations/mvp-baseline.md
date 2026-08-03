@@ -108,7 +108,7 @@ set +a
 pnpm probe:llm
 ```
 
-命令退出码必须为 `0`，输出中的 `structuredOutput`、`toolCall`、`streamedText` 必须都为 `true`。探测失败时不要切换生产流量。
+命令退出码必须为 `0`，输出中的 `structuredOutput`、`toolCall`、`streamedEvents` 必须都为 `true`。探测失败时不要切换生产流量。
 
 ## 5. Trigger.dev Cloud
 
