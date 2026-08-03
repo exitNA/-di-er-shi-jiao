@@ -10,6 +10,7 @@ import {
   createExpertHarness,
   type ExpertHarness,
   type ExpertSessionFactory,
+  expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
 import { externalSource, loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
@@ -29,6 +30,8 @@ export function createSourcesExpert(createSession: ExpertSessionFactory): Expert
     schema: sourcesModuleSchema,
     completionSchema: zodCompletionSchema(sourcesModuleSchema),
     createSession,
+    resourceDir: expertResourceDir("sources"),
+    systemPrompt: sourcesSystemInstruction,
   });
 }
 
@@ -44,7 +47,7 @@ export async function researchSources(
     : [];
   const generated = await harness.run({
     operation: "sources",
-    system: sourcesSystemInstruction,
+    systemPrompt: sourcesSystemInstruction,
     prompt: sourcesPrompt(input.material, candidates.slice(0, 8)),
     abortSignal: input.abortSignal,
   });

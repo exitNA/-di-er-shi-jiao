@@ -4,6 +4,7 @@ import {
   createExpertHarness,
   type ExpertHarness,
   type ExpertSessionFactory,
+  expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
@@ -15,6 +16,8 @@ export function createRisksExpert(createSession: ExpertSessionFactory): ExpertHa
     schema: risksModuleSchema,
     completionSchema: zodCompletionSchema(risksModuleSchema),
     createSession,
+    resourceDir: expertResourceDir("risks"),
+    systemPrompt: risksSystemInstruction,
   });
 }
 
@@ -24,7 +27,7 @@ export async function reviewRisks(
 ): Promise<ExpertResult<RisksModule>> {
   const generated = await harness.run({
     operation: "risks",
-    system: risksSystemInstruction,
+    systemPrompt: risksSystemInstruction,
     prompt: risksPrompt(input.material),
     abortSignal: input.abortSignal,
   });

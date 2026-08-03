@@ -18,6 +18,7 @@ import {
   createExpertHarness,
   type ExpertHarness,
   type ExpertSessionFactory,
+  expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
@@ -37,11 +38,15 @@ export function createSynthesisExpert(createSession: ExpertSessionFactory): {
       schema: synthesisOutputSchema,
       completionSchema: zodCompletionSchema(synthesisOutputSchema),
       createSession,
+      resourceDir: expertResourceDir("synthesis"),
+      systemPrompt: synthesisSystemInstruction,
     }),
     reviseDraft: createExpertHarness({
       schema: baselineDraftSchema,
       completionSchema: zodCompletionSchema(baselineDraftSchema),
       createSession,
+      resourceDir: expertResourceDir("synthesis"),
+      systemPrompt: draftRevisionSystemInstruction,
     }),
   };
 }
@@ -54,7 +59,13 @@ export function createTargetedReviewExpert(
     input.target.moduleType,
     new Set(input.newSources?.map((source) => source.id)),
   );
-  return createExpertHarness({ schema, completionSchema: zodCompletionSchema(schema), createSession });
+  return createExpertHarness({
+    schema,
+    completionSchema: zodCompletionSchema(schema),
+    createSession,
+    resourceDir: expertResourceDir("synthesis"),
+    systemPrompt: targetedReviewSystemInstruction,
+  });
 }
 
 export function synthesize(
@@ -63,7 +74,7 @@ export function synthesize(
 ) {
   return harness.run({
     operation: "synthesis",
-    system: synthesisSystemInstruction,
+    systemPrompt: synthesisSystemInstruction,
     prompt: synthesisPrompt(input.material, expertOutputs(input)),
     abortSignal: input.abortSignal,
   });
@@ -76,7 +87,7 @@ function synthesisPrompt(material: string, outputs: unknown): string {
 export function reviseDraft(harness: ExpertHarness<BaselineDraft>, input: DraftRevisionInput) {
   return harness.run({
     operation: "draft-revision",
-    system: draftRevisionSystemInstruction,
+    systemPrompt: draftRevisionSystemInstruction,
     prompt: `${synthesisPrompt(input.material, expertOutputs(input))}\n\n${sourceMaterial(JSON.stringify(input.draft))}\n\n${sourceMaterial(JSON.stringify(input.findings))}`,
     abortSignal: input.abortSignal,
   });
@@ -88,7 +99,7 @@ export function reviewTarget(
 ) {
   return harness.run({
     operation: "targeted-review",
-    system: targetedReviewSystemInstruction,
+    systemPrompt: targetedReviewSystemInstruction,
     prompt: `${sourceMaterial(input.material)}\n\n${sourceMaterial(JSON.stringify({
       target: input.target,
       currentModule: input.currentModule,

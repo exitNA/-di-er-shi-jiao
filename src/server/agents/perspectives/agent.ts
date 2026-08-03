@@ -9,6 +9,7 @@ import {
   createExpertHarness,
   type ExpertHarness,
   type ExpertSessionFactory,
+  expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
@@ -25,11 +26,15 @@ export function createPerspectivesExpert(createSession: ExpertSessionFactory): {
       schema: perspectivesModuleSchema,
       completionSchema: zodCompletionSchema(perspectivesModuleSchema),
       createSession,
+      resourceDir: expertResourceDir("perspectives"),
+      systemPrompt: perspectivesSystemInstruction,
     }),
     reviewDraft: createExpertHarness({
       schema: draftReviewSchema,
       completionSchema: zodCompletionSchema(draftReviewSchema),
       createSession,
+      resourceDir: expertResourceDir("perspectives"),
+      systemPrompt: draftReviewSystemInstruction,
     }),
   };
 }
@@ -37,7 +42,7 @@ export function createPerspectivesExpert(createSession: ExpertSessionFactory): {
 export function mapPerspectives(harness: ExpertHarness<PerspectivesModule>, input: ExpertInput) {
   return harness.run({
     operation: "perspectives",
-    system: perspectivesSystemInstruction,
+    systemPrompt: perspectivesSystemInstruction,
     prompt: perspectivesPrompt(input.material),
     abortSignal: input.abortSignal,
   });
@@ -54,7 +59,7 @@ function draftReviewPrompt(material: string, draft: unknown): string {
 export function reviewDraft(harness: ExpertHarness<DraftReview>, input: DraftReviewInput) {
   return harness.run({
     operation: "draft-review",
-    system: draftReviewSystemInstruction,
+    systemPrompt: draftReviewSystemInstruction,
     prompt: draftReviewPrompt(input.material, input.draft),
     abortSignal: input.abortSignal,
   });

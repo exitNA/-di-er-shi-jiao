@@ -11,18 +11,28 @@ import {
 } from "@/features/analysis/server/submit-analysis";
 import {
   createOpenAICompatibleLanguageModel,
-  OpenAICompatibleGenerator,
 } from "@/server/adapters/ai/openai-compatible-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { InProcessAnalysisDispatcher } from "@/server/adapters/tasks/in-process-analysis-dispatcher";
 import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analysis-dispatcher";
-import { analyzeArgument } from "@/server/agents/argument/agent";
-import { mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
-import { reviewRisks } from "@/server/agents/risks/agent";
-import { researchSources } from "@/server/agents/sources/agent";
-import { reviewTarget, reviseDraft, synthesize } from "@/server/agents/synthesis/agent";
+import { analyzeArgument, createArgumentExpert } from "@/server/agents/argument/agent";
+import { createPerspectivesExpert, mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
+import { createRisksExpert, reviewRisks } from "@/server/agents/risks/agent";
+import { createSourcesExpert, researchSources } from "@/server/agents/sources/agent";
+import {
+  createSynthesisExpert,
+  createTargetedReviewExpert,
+  reviewTarget,
+  reviseDraft,
+  synthesize,
+} from "@/server/agents/synthesis/agent";
 import type { ExpertSuite } from "@/server/agents/expert-suite";
 import { ManagerAgentRuntime } from "@/server/agents/manager/agent";
+import {
+  createPiSession,
+  createProjectPiModelRuntime,
+} from "@/server/agents/shared/pi-session";
+import type { ExpertSessionFactory } from "@/server/agents/shared/expert-harness";
 import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
 import { loadServerEnv } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
@@ -59,19 +69,28 @@ export function getContainer(): ApplicationContainer {
       apiKey: env.LLM_API_KEY,
       modelId: env.LLM_MODEL_ID,
     };
-    const generator = new OpenAICompatibleGenerator(llmConfig);
+    const piRuntime = createProjectPiModelRuntime(llmConfig);
+    const createExpertSession: ExpertSessionFactory = async (input) => {
+      const { model, modelRuntime } = await piRuntime;
+      return createPiSession({ ...input, model, modelRuntime });
+    };
+    const argumentExpert = createArgumentExpert(createExpertSession);
+    const perspectivesExpert = createPerspectivesExpert(createExpertSession);
+    const sourcesExpert = createSourcesExpert(createExpertSession);
+    const risksExpert = createRisksExpert(createExpertSession);
+    const synthesisExpert = createSynthesisExpert(createExpertSession);
     const searchTool = env.TAVILY_API_KEY
       ? new TavilySearchClient({ apiKey: env.TAVILY_API_KEY })
       : undefined;
     const experts: ExpertSuite = {
-      analyzeArgument: (input) => analyzeArgument(generator, input),
-      mapPerspectives: (input) => mapPerspectives(generator, input),
-      researchSources: (input) => researchSources(generator, searchTool, input),
-      reviewRisks: (input) => reviewRisks(generator, input),
-      synthesize: (input) => synthesize(generator, input),
-      reviewDraft: (input) => reviewDraft(generator, input),
-      reviseDraft: (input) => reviseDraft(generator, input),
-      reviewTarget: (input) => reviewTarget(generator, input),
+      analyzeArgument: (input) => analyzeArgument(argumentExpert, input),
+      mapPerspectives: (input) => mapPerspectives(perspectivesExpert.mapPerspectives, input),
+      researchSources: (input) => researchSources(sourcesExpert, searchTool, input),
+      reviewRisks: (input) => reviewRisks(risksExpert, input),
+      synthesize: (input) => synthesize(synthesisExpert.synthesize, input),
+      reviewDraft: (input) => reviewDraft(perspectivesExpert.reviewDraft, input),
+      reviseDraft: (input) => reviseDraft(synthesisExpert.reviseDraft, input),
+      reviewTarget: (input) => reviewTarget(createTargetedReviewExpert(createExpertSession, input), input),
     };
     const workspaceToolExecutor = new WorkspaceToolExecutor(
       experts,

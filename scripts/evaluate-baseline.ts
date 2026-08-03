@@ -1,15 +1,25 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { baselineDraftSchema, type SourcesModule } from "@/features/analysis/domain/contracts";
-import { OpenAICompatibleGenerator } from "@/server/adapters/ai/openai-compatible-generator";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
-import { analyzeArgument } from "@/server/agents/argument/agent";
+import { analyzeArgument, createArgumentExpert } from "@/server/agents/argument/agent";
 import type { ExpertSuite } from "@/server/agents/expert-suite";
-import { mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
-import { reviewRisks } from "@/server/agents/risks/agent";
-import { researchSources } from "@/server/agents/sources/agent";
-import { reviewTarget, reviseDraft, synthesize } from "@/server/agents/synthesis/agent";
+import { createPerspectivesExpert, mapPerspectives, reviewDraft } from "@/server/agents/perspectives/agent";
+import { createRisksExpert, reviewRisks } from "@/server/agents/risks/agent";
+import { createSourcesExpert, researchSources } from "@/server/agents/sources/agent";
+import {
+  createSynthesisExpert,
+  createTargetedReviewExpert,
+  reviewTarget,
+  reviseDraft,
+  synthesize,
+} from "@/server/agents/synthesis/agent";
 import { loadServerEnv } from "@/server/config/env";
+import {
+  createPiSession,
+  createProjectPiModelRuntime,
+} from "@/server/agents/shared/pi-session";
+import type { ExpertSessionFactory } from "@/server/agents/shared/expert-harness";
 import {
   evaluationReportSchema,
   evaluationRunMetricsSchema,
@@ -85,23 +95,32 @@ async function main(): Promise<void> {
 
 function createRealExpertSuite(): ExpertSuite {
   const env = loadServerEnv();
-  const generator = new OpenAICompatibleGenerator({
+  const piRuntime = createProjectPiModelRuntime({
     baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
     modelId: env.LLM_MODEL_ID,
   });
+  const createExpertSession: ExpertSessionFactory = async (input) => {
+    const { model, modelRuntime } = await piRuntime;
+    return createPiSession({ ...input, model, modelRuntime });
+  };
+  const argumentExpert = createArgumentExpert(createExpertSession);
+  const perspectivesExpert = createPerspectivesExpert(createExpertSession);
+  const sourcesExpert = createSourcesExpert(createExpertSession);
+  const risksExpert = createRisksExpert(createExpertSession);
+  const synthesisExpert = createSynthesisExpert(createExpertSession);
   const searchTool = env.TAVILY_API_KEY
     ? new TavilySearchClient({ apiKey: env.TAVILY_API_KEY })
     : undefined;
   return {
-    analyzeArgument: (input) => analyzeArgument(generator, input),
-    mapPerspectives: (input) => mapPerspectives(generator, input),
-    researchSources: (input) => researchSources(generator, searchTool, input),
-    reviewRisks: (input) => reviewRisks(generator, input),
-    synthesize: (input) => synthesize(generator, input),
-    reviewDraft: (input) => reviewDraft(generator, input),
-    reviseDraft: (input) => reviseDraft(generator, input),
-    reviewTarget: (input) => reviewTarget(generator, input),
+    analyzeArgument: (input) => analyzeArgument(argumentExpert, input),
+    mapPerspectives: (input) => mapPerspectives(perspectivesExpert.mapPerspectives, input),
+    researchSources: (input) => researchSources(sourcesExpert, searchTool, input),
+    reviewRisks: (input) => reviewRisks(risksExpert, input),
+    synthesize: (input) => synthesize(synthesisExpert.synthesize, input),
+    reviewDraft: (input) => reviewDraft(perspectivesExpert.reviewDraft, input),
+    reviseDraft: (input) => reviseDraft(synthesisExpert.reviseDraft, input),
+    reviewTarget: (input) => reviewTarget(createTargetedReviewExpert(createExpertSession, input), input),
   };
 }
 

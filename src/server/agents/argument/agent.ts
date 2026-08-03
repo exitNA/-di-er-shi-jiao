@@ -4,6 +4,7 @@ import {
   createExpertHarness,
   type ExpertHarness,
   type ExpertSessionFactory,
+  expertResourceDir,
   zodCompletionSchema,
 } from "../shared/expert-harness";
 import { loadPromptTemplate, sourceMaterial, systemInstruction } from "../shared/prompt";
@@ -16,13 +17,15 @@ export function createArgumentExpert(createSession: ExpertSessionFactory): Exper
     schema: argumentModuleSchema,
     completionSchema: zodCompletionSchema(argumentModuleSchema),
     createSession,
+    resourceDir: expertResourceDir("argument"),
+    systemPrompt: argumentSystemInstruction,
   });
 }
 
 export function analyzeArgument(harness: ExpertHarness<ArgumentModule>, input: ExpertInput) {
   return harness.run({
     operation: "argument",
-    system: input.factualOnly ? factualArgumentSystemInstruction : argumentSystemInstruction,
+    systemPrompt: input.factualOnly ? factualArgumentSystemInstruction : argumentSystemInstruction,
     prompt: argumentPrompt(input.material),
     abortSignal: input.abortSignal,
   });

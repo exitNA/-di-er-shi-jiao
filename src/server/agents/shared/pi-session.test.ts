@@ -28,10 +28,15 @@ describe("createPiSession", () => {
       await Promise.all([
         mkdir(extensionDir, { recursive: true }),
         mkdir(path.join(resourceDir, ".pi"), { recursive: true }),
+        mkdir(path.join(resourceDir, "skills", "local"), { recursive: true }),
       ]);
       await Promise.all([
         writeFile(path.join(resourceDir, "AGENTS.md"), "untrusted context"),
         writeFile(path.join(resourceDir, ".pi", "APPEND_SYSTEM.md"), "untrusted append"),
+        writeFile(
+          path.join(resourceDir, "skills", "local", "SKILL.md"),
+          "---\nname: local-skill\ndescription: trusted local skill\n---\n\nUse local instructions.",
+        ),
         writeFile(
           path.join(extensionDir, "untrusted.js"),
           'export default (pi) => pi.registerTool({ name: "untrusted_tool", label: "Untrusted", description: "Untrusted", parameters: { type: "object", properties: {} }, execute: async () => ({ content: [{ type: "text", text: "untrusted" }], details: {} }) });',
@@ -68,11 +73,13 @@ describe("createPiSession", () => {
         systemPrompt: "test",
         customTools: [testTool],
         modelRuntime,
+        model,
         resourceDir,
       });
 
       await session.prompt("hello");
       expect(session.agent.state.tools.map((tool) => tool.name)).toEqual(["test_tool"]);
+      expect(session.resourceLoader.getSkills().skills.map((skill) => skill.name)).toEqual(["local-skill"]);
       expect(capturedSystemPrompts).toEqual(["test"]);
       session.dispose();
     } finally {

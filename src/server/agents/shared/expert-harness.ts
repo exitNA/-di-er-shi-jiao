@@ -1,6 +1,7 @@
 import "server-only";
 
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import path from "node:path";
 import { Type, type TSchema } from "typebox";
 import { z } from "zod";
 
@@ -10,8 +11,14 @@ export type ExpertRunRequest = {
   prompt?: string;
   material?: string;
   operation?: string;
-  system?: string;
+  systemPrompt?: string;
   abortSignal?: AbortSignal;
+};
+
+export type ExpertSessionInput = {
+  customTools: ToolDefinition[];
+  resourceDir: string;
+  systemPrompt: string;
 };
 
 export type ExpertSession = {
@@ -26,7 +33,9 @@ export type ExpertSession = {
 type ExpertHarnessInput<T> = {
   schema: z.ZodType<T>;
   completionSchema: TSchema;
-  createSession(customTools: ToolDefinition[]): Promise<ExpertSession>;
+  resourceDir: string;
+  systemPrompt: string;
+  createSession(input: ExpertSessionInput): Promise<ExpertSession>;
 };
 
 export type ExpertSessionFactory = ExpertHarnessInput<unknown>["createSession"];
@@ -62,7 +71,11 @@ export function createExpertHarness<T>(input: ExpertHarnessInput<T>): ExpertHarn
 
   return {
     async run(request) {
-      const session = await input.createSession([complete]);
+      const session = await input.createSession({
+        customTools: [complete],
+        resourceDir: input.resourceDir,
+        systemPrompt: request.systemPrompt ?? input.systemPrompt,
+      });
       const startedAt = performance.now();
       let completed = false;
       let submitted: unknown;
@@ -100,6 +113,10 @@ export function createExpertHarness<T>(input: ExpertHarnessInput<T>): ExpertHarn
 
 export function zodCompletionSchema<T>(schema: z.ZodType<T>): TSchema {
   return Type.Unsafe<T>(z.toJSONSchema(schema) as TSchema);
+}
+
+export function expertResourceDir(agent: string): string {
+  return path.resolve(process.cwd(), "src/server/agents", agent);
 }
 
 function isCompleteResult(event: unknown): event is { result: { details: { value: unknown } } } {
