@@ -31,6 +31,7 @@ import {
   calculateTokenCostUsd,
   formatTokenCostUsd,
 } from "@/server/observability/cost";
+import { withLangfuseObservation } from "@/server/observability/langfuse";
 import {
   draftReviewSchema,
   synthesisOutputSchema,
@@ -127,9 +128,6 @@ export class WorkspaceToolExecutor {
   ) {}
 
   runExpert(input: RunPeerExpertInput): Promise<AgentToolResult> {
-    if (input.task && input.task.length > 2_000) {
-      return Promise.resolve({ ok: false, code: "INVALID_EXPERT_TASK" });
-    }
     const toolNames: Record<PeerExpertName, WorkspaceToolName> = {
       argument: "analyze_argument",
       sources: "research_sources",
@@ -137,11 +135,20 @@ export class WorkspaceToolExecutor {
       risks: "review_risks",
       synthesis: "synthesize_report",
     };
-    return this.execute(toolNames[input.expert], input);
+    const toolName = toolNames[input.expert];
+    return withLangfuseObservation(
+      { name: `workspace.${toolName}`, asType: "tool", input },
+      () => input.task && input.task.length > 2_000
+        ? Promise.resolve({ ok: false, code: "INVALID_EXPERT_TASK" })
+        : this.execute(toolName, input),
+    );
   }
 
   runReportAction(input: RunReportActionInput): Promise<AgentToolResult> {
-    return this.execute(input.action, input);
+    return withLangfuseObservation(
+      { name: `workspace.${input.action}`, asType: "tool", input },
+      () => this.execute(input.action, input),
+    );
   }
 
   async execute(name: WorkspaceToolName, context: WorkspaceExecutionContext): Promise<AgentToolResult> {

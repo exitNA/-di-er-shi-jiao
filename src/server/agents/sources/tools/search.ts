@@ -3,6 +3,7 @@ import { getDomain } from "tldts";
 import { Type } from "typebox";
 
 import { externalSource } from "../../shared/prompt";
+import { withLangfuseObservation } from "@/server/observability/langfuse";
 import type { SearchClient, SearchResult } from "@/server/search/search-client";
 
 export type SourceCandidate = SearchResult & {
@@ -26,10 +27,21 @@ export function createSourceSearchTool(input: SourceSearchToolInput): ToolDefini
     promptSnippet: "Use search_sources to find external evidence for the submitted material.",
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
-      const candidates = selectCandidates((await mapWithConcurrency(sourceQueries(input.material), 2, (query) =>
-        input.searchClient.search({ query, topic: "general", maxResults: 5, signal }),
-      )).flat().slice(0, 15));
-      input.onCandidates?.(candidates);
+      const queries = sourceQueries(input.material);
+      const { candidates } = await withLangfuseObservation(
+        {
+          name: "sources.search",
+          asType: "retriever",
+          input: { material: input.material, queries },
+        },
+        async () => {
+          const candidates = selectCandidates((await mapWithConcurrency(queries, 2, (query) =>
+            input.searchClient.search({ query, topic: "general", maxResults: 5, signal }),
+          )).flat().slice(0, 15));
+          input.onCandidates?.(candidates);
+          return { candidates };
+        },
+      );
       return {
         content: [{
           type: "text",

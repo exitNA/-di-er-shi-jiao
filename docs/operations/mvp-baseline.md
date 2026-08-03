@@ -199,16 +199,32 @@ pnpm exec trigger.dev deploy
 
 结构化日志只允许记录 `workspaceId`、`agentRunId`、`operation`、`errorCode`、`durationMs`、`attempt` 等运行元数据。不得记录完整原文、用户名、密码、认证会话令牌、prompt、模型 response、API key 或任意未经筛选的异常对象。
 
-详细的原文、prompt、模型输入输出和工具结果只写入本地 Langfuse observation。配置应用连接：
+启动独立的本地 Langfuse 栈：
+
+```bash
+pnpm langfuse:up
+```
+
+该命令首次运行时生成未跟踪的 `.env.langfuse.local`，预置本地组织、项目、管理员和项目 API key。将其中以下四个 `LANGFUSE_*` 值复制到 `.env.local`，并为 Trigger.dev worker 配置相同值：
 
 ```dotenv
 LANGFUSE_BASE_URL=http://localhost:3000
-LANGFUSE_PUBLIC_KEY=<local-public-key>
-LANGFUSE_SECRET_KEY=<local-secret-key>
+LANGFUSE_PUBLIC_KEY=<.env.langfuse.local 中的值>
+LANGFUSE_SECRET_KEY=<.env.langfuse.local 中的值>
 LANGFUSE_TRACING_ENVIRONMENT=local
 ```
 
-重启 Web 应用和 Trigger.dev 任务后，在 Langfuse 中确认同一次分析的 observation 共享 trace，且完整输入输出不会进入结构化日志或前端 SSE。
+重启 Web 应用和 Trigger.dev worker 后访问 <http://localhost:3000>，使用 `local@example.com` 和 `.env.langfuse.local` 中的 `LANGFUSE_INIT_USER_PASSWORD` 登录。详细的原始材料、system prompt、模型消息与输出、工具完整输入与结果、信源 URL、token、估算成本、错误和取消状态只进入 Langfuse observation；结构化日志和前端 SSE 继续使用既有脱敏数据。
+
+执行一次包含在线搜索的分析，并在 Langfuse UI 中验收：
+
+1. 只有一个 `analysis.baseline` trace，并携带对应用户、workspace 和原始材料。
+2. trace 内可展开 `manager`、专家 observation 与 `pi.generation`；generation 展示实际 model、token 和成本。
+3. 专家委派、`sources.search`、审校、修订和发布 observation 均嵌套在活动 trace 中；搜索输出包含候选结果及完整来源 URL。
+4. 制造一次可恢复搜索或模型失败，确认对应 observation 为 `ERROR`、保留错误信息，既有恢复流程仍可继续。
+5. 浏览器 SSE 和结构化日志中没有原始材料、prompt、模型完整 response、API key 或 Langfuse 密钥。
+
+本地调试结束后运行 `pnpm langfuse:down`；该命令保留 volumes 和历史观察数据。
 
 告警至少覆盖：任务 `recoverable`、信源降级率、专家成功率、首模块 P95、完整报告 P95 和估算 token 成本。
 
@@ -282,7 +298,7 @@ pnpm probe:llm
 4. 若配置了 Tavily，打开一个外部信源，确认标题、发布者、日期和链接可用。
 5. 从历史记录重新打开报告，再退出登录。
 6. 确认每次运行只有一次 `run-agent` 派发，工作空间快照中的 Agent run 按
-   `queued -> running -> completed` 转换，OTel 有对应 job/expert spans，日志没有原文或身份凭据。
+   `queued -> running -> completed` 转换；Langfuse 中只有一个对应 analysis trace，且 manager、专家、generation、搜索和报告动作层级完整；日志没有原文或身份凭据。
 
 真实服务 gate 还必须完成 `pnpm eval:run` 和双评审后的 `pnpm eval:score`。
 
