@@ -1,6 +1,8 @@
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import { LangfuseOtelSpanAttributes } from "@langfuse/tracing";
 import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   withAnalysisTrace,
@@ -13,6 +15,7 @@ const processor = new LangfuseSpanProcessor({
   exportMode: "immediate",
 });
 const sdk = new NodeSDK({ spanProcessors: [processor] });
+const run = promisify(execFile);
 
 function parseAttribute(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -126,4 +129,19 @@ describe("Langfuse observations", () => {
       statusMessage: "provider failed",
     }));
   });
+});
+
+it("does not retain a legacy OTLP observability configuration", async () => {
+  await expect(run("git", [
+    "grep",
+    "-n",
+    "-E",
+    "OTEL_EXPORTER_OTLP_ENDPOINT|OTLPTraceExporter|exporter-trace-otlp-http",
+    "--",
+    ".",
+    ":(exclude)pnpm-lock.yaml",
+    ":(exclude)docs/superpowers/**",
+    ":(exclude).superpowers/**",
+    ":(exclude)tests/unit/server/observability/langfuse.test.ts",
+  ])).rejects.toMatchObject({ code: 1 });
 });
