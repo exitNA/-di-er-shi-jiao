@@ -5,6 +5,7 @@ import path from "node:path";
 import { Type, type TSchema } from "typebox";
 import { z } from "zod";
 
+import { withLangfuseObservation } from "@/server/observability/langfuse";
 import type { ExpertResult } from "../expert-suite";
 
 export type ExpertRunRequest = {
@@ -71,42 +72,55 @@ export function createExpertHarness<T>(input: ExpertHarnessInput<T>): ExpertHarn
 
   return {
     async run(request) {
-      const session = await input.createSession({
-        customTools: [complete],
-        resourceDir: input.resourceDir,
-        systemPrompt: request.systemPrompt ?? input.systemPrompt,
-      });
-      const startedAt = performance.now();
-      let completed = false;
-      let submitted: unknown;
-      const unsubscribe = session.subscribe((event) => {
-        if (!isCompleteResult(event) || completed) return;
-        completed = true;
-        submitted = event.result.details.value;
-      });
-      const abort = () => void session.abort?.();
-      request.abortSignal?.addEventListener("abort", abort, { once: true });
-      if (request.abortSignal?.aborted) abort();
+      const agentId = request.operation ?? path.basename(input.resourceDir);
+      const systemPrompt = request.systemPrompt ?? input.systemPrompt;
+      const prompt = request.prompt ?? request.material ?? "";
+      return withLangfuseObservation(
+        {
+          name: `expert.${agentId}`,
+          asType: "agent",
+          input: { systemPrompt, messages: [{ role: "user", content: prompt }] },
+          metadata: { agentId },
+        },
+        async () => {
+          const session = await input.createSession({
+            customTools: [complete],
+            resourceDir: input.resourceDir,
+            systemPrompt,
+          });
+          const startedAt = performance.now();
+          let completed = false;
+          let submitted: unknown;
+          const unsubscribe = session.subscribe((event) => {
+            if (!isCompleteResult(event) || completed) return;
+            completed = true;
+            submitted = event.result.details.value;
+          });
+          const abort = () => void session.abort?.();
+          request.abortSignal?.addEventListener("abort", abort, { once: true });
+          if (request.abortSignal?.aborted) abort();
 
-      try {
-        await session.prompt(request.prompt ?? request.material ?? "");
-        await session.waitForIdle();
-        const parsed = input.schema.safeParse(submitted);
-        if (!completed || !parsed.success) throw new ExpertHarnessError();
-        const tokens = session.getSessionStats?.().tokens;
-        return {
-          value: parsed.data,
-          usage: {
-            inputTokens: tokens?.input ?? 0,
-            outputTokens: tokens?.output ?? 0,
-            latencyMs: Math.round(performance.now() - startedAt),
-          },
-        };
-      } finally {
-        request.abortSignal?.removeEventListener("abort", abort);
-        unsubscribe();
-        session.dispose?.();
-      }
+          try {
+            await session.prompt(prompt);
+            await session.waitForIdle();
+            const parsed = input.schema.safeParse(submitted);
+            if (!completed || !parsed.success) throw new ExpertHarnessError();
+            const tokens = session.getSessionStats?.().tokens;
+            return {
+              value: parsed.data,
+              usage: {
+                inputTokens: tokens?.input ?? 0,
+                outputTokens: tokens?.output ?? 0,
+                latencyMs: Math.round(performance.now() - startedAt),
+              },
+            };
+          } finally {
+            request.abortSignal?.removeEventListener("abort", abort);
+            unsubscribe();
+            session.dispose?.();
+          }
+        },
+      );
     },
   };
 }

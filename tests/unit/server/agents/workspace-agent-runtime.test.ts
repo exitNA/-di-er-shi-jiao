@@ -1,5 +1,8 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { LangfuseSpanProcessor } from "@langfuse/otel";
+import { LangfuseOtelSpanAttributes } from "@langfuse/tracing";
+import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import type { NewAnalysisEvent } from "@/features/analysis/server/analysis-repository";
@@ -18,8 +21,15 @@ import {
 
 const workspaceId = "workspace-1";
 const agentRunId = "run-1";
+const exporter = new tracing.InMemorySpanExporter();
+const processor = new LangfuseSpanProcessor({ exporter, exportMode: "immediate" });
+const sdk = new NodeSDK({ spanProcessors: [processor] });
 
 describe("ManagerAgentRuntime", () => {
+  beforeAll(() => sdk.start());
+  beforeEach(() => exporter.reset());
+  afterAll(() => sdk.shutdown());
+
   it("runs a Pi session with peer delegation and server-owned context", async () => {
     const repository = baselineRepository();
     const executor = recordingExecutor(repository.complete);
@@ -86,6 +96,17 @@ describe("ManagerAgentRuntime", () => {
       "agent.ui.run.finished",
     ]);
     expect(JSON.stringify(repository.events)).not.toContain("top-secret");
+    await processor.forceFlush();
+    const observations = exporter.getFinishedSpans();
+    const analysis = observations.find((span) => span.name === "analysis.baseline");
+    const manager = observations.find((span) => span.name === "manager");
+    expect(analysis?.attributes[LangfuseOtelSpanAttributes.OBSERVATION_INPUT]).toBe(
+      JSON.stringify({ material: "material" }),
+    );
+    expect(manager).toEqual(expect.objectContaining({
+      parentSpanContext: expect.objectContaining({ spanId: analysis?.spanContext().spanId }),
+    }));
+    expect(manager?.attributes[LangfuseOtelSpanAttributes.OBSERVATION_TYPE]).toBe("agent");
   });
 
   it("returns interrupted when Agent generation is cancelled", async () => {
@@ -384,7 +405,7 @@ function managerSession(run?: (
   emit: (event: unknown) => void,
 ) => Promise<void>) {
   let tools: ToolDefinition[] = [];
-  let listener = (_event: unknown) => {};
+  let listener: (event: unknown) => void = () => {};
   return {
     set tools(value: ToolDefinition[]) { tools = value; },
     prompt: vi.fn(async () => run?.(tools, (event) => listener(event))),

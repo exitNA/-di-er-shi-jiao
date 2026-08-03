@@ -7,6 +7,10 @@ import {
 } from "@/features/analysis/domain/contracts";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
 import {
+  withAnalysisTrace,
+  withLangfuseObservation,
+} from "@/server/observability/langfuse";
+import {
   type ExpertSession,
   type ExpertSessionInput,
   expertResourceDir,
@@ -58,6 +62,7 @@ export type ManagerAgentSessionFactory = (
 type ManagerAgentContext = AgentToolContext & {
   userId: string;
   kind: "baseline" | "challenge";
+  material: string;
   completedTools: WorkspaceToolName[];
 };
 
@@ -99,14 +104,42 @@ export class ManagerAgentRuntime {
   ) {}
 
   async run(input: ManagerAgentRunInput): Promise<ManagerAgentRunResult> {
-    let context: ManagerAgentContext | undefined;
+    const context = await loadManagerAgentContext(this.repository, input);
+    const prompt = promptForRun(context);
+    return withAnalysisTrace(
+      {
+        workspaceId: context.workspaceId,
+        userId: context.userId,
+        kind: context.kind,
+        material: context.material,
+      },
+      () => withLangfuseObservation(
+        {
+          name: "manager",
+          asType: "agent",
+          input: {
+            agentRunId: input.agentRunId,
+            systemPrompt: managerAgentInstructions,
+            messages: [{ role: "user", content: prompt }],
+          },
+          metadata: { agentId: "manager" },
+        },
+        () => this.runAuthorized(input, context, prompt),
+      ),
+    );
+  }
+
+  private async runAuthorized(
+    input: ManagerAgentRunInput,
+    context: ManagerAgentContext,
+    prompt: string,
+  ): Promise<ManagerAgentRunResult> {
     let session: ExpertSession | undefined;
     let unsubscribe: (() => void) | undefined;
     let abort: (() => void) | undefined;
     let bridgeWrites = Promise.resolve();
     let bridgeError: unknown;
     try {
-      context = await loadManagerAgentContext(this.repository, input);
       await this.appendEvent(context, "agent.ui.run.started", {
         runId: input.agentRunId,
         threadId: input.workspaceId,
@@ -151,7 +184,7 @@ export class ManagerAgentRuntime {
       abort = () => void session?.abort?.();
       input.signal.addEventListener("abort", abort, { once: true });
       if (input.signal.aborted) abort();
-      await session.prompt(promptForRun(context));
+      await session.prompt(prompt);
       await session.waitForIdle();
       await bridgeWrites;
       if (bridgeError) throw bridgeError;
@@ -176,21 +209,17 @@ export class ManagerAgentRuntime {
       await bridgeWrites;
       const runError = bridgeError ?? error;
       if (input.signal.aborted) {
-        if (context) {
-          await this.appendEvent(context, "agent.ui.run.finished", {
-            runId: input.agentRunId,
-            outcome: "interrupt",
-          });
-        }
+        await this.appendEvent(context, "agent.ui.run.finished", {
+          runId: input.agentRunId,
+          outcome: "interrupt",
+        });
         return { status: "interrupted" };
       }
-      if (context) {
-        await this.appendEvent(context, "agent.ui.run.error", {
-          runId: input.agentRunId,
-          message: redactError(runError),
-          code: errorCode(runError),
-        });
-      }
+      await this.appendEvent(context, "agent.ui.run.error", {
+        runId: input.agentRunId,
+        message: redactError(runError),
+        code: errorCode(runError),
+      });
       throw runError;
     } finally {
       await bridgeWrites;
@@ -272,6 +301,7 @@ export async function loadManagerAgentContext(
     userId: job.userId,
     signal: input.signal,
     kind: run.kind,
+    material: job.material,
     completedTools: [...completedTools],
     ...(pendingMessage
       ? { messageId: pendingMessage.id, target: pendingMessage.target }
