@@ -8,7 +8,6 @@ import type {
   RisksModule,
   SourcesModule,
 } from "@/features/analysis/domain/contracts";
-import type { GenerationUsage } from "@/server/ai/structured-generator";
 import type {
   TargetedReview,
   TargetedReviewInput,
@@ -23,6 +22,12 @@ export type ExpertInput = {
   material: string;
   factualOnly?: boolean;
   abortSignal?: AbortSignal;
+};
+
+export type GenerationUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
 };
 
 export type ExpertOutputs = Pick<BaselineDraft, "argument" | "perspectives" | "sources" | "risks">;

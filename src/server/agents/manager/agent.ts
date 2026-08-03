@@ -20,6 +20,11 @@ import {
 } from "../workspace-tool-executor";
 import { createDelegateExpertTool } from "./tools/delegate-expert";
 import { createReportActionTool } from "./tools/report-actions";
+import {
+  bridgePiEvent,
+  redactPiText,
+  type PiEventBridgeContext,
+} from "./pi-event-bridge";
 
 export type ManagerAgentRunInput = {
   workspaceId: string;
@@ -98,6 +103,8 @@ export class ManagerAgentRuntime {
     let session: ExpertSession | undefined;
     let unsubscribe: (() => void) | undefined;
     let abort: (() => void) | undefined;
+    let bridgeWrites = Promise.resolve();
+    let bridgeError: unknown;
     try {
       context = await loadManagerAgentContext(this.repository, input);
       await this.appendEvent(context, "agent.ui.run.started", {
@@ -132,12 +139,22 @@ export class ManagerAgentRuntime {
               reportAction,
             ],
       });
-      unsubscribe = session.subscribe(() => {});
+      const bridgeContext: PiEventBridgeContext = {
+        runId: input.agentRunId,
+        appendEvent: (eventType, payload) => this.appendEvent(context!, eventType, payload),
+      };
+      unsubscribe = session.subscribe((event) => {
+        bridgeWrites = bridgeWrites
+          .then(() => bridgePiEvent(event, bridgeContext))
+          .catch((error: unknown) => { bridgeError ??= error; });
+      });
       abort = () => void session?.abort?.();
       input.signal.addEventListener("abort", abort, { once: true });
       if (input.signal.aborted) abort();
       await session.prompt(promptForRun(context));
       await session.waitForIdle();
+      await bridgeWrites;
+      if (bridgeError) throw bridgeError;
       if (input.signal.aborted) {
         await this.appendEvent(context, "agent.ui.run.finished", {
           runId: input.agentRunId,
@@ -156,6 +173,8 @@ export class ManagerAgentRuntime {
       });
       return { status: "completed" };
     } catch (error) {
+      await bridgeWrites;
+      const runError = bridgeError ?? error;
       if (input.signal.aborted) {
         if (context) {
           await this.appendEvent(context, "agent.ui.run.finished", {
@@ -168,12 +187,13 @@ export class ManagerAgentRuntime {
       if (context) {
         await this.appendEvent(context, "agent.ui.run.error", {
           runId: input.agentRunId,
-          message: redactError(error),
-          code: errorCode(error),
+          message: redactError(runError),
+          code: errorCode(runError),
         });
       }
-      throw error;
+      throw runError;
     } finally {
+      await bridgeWrites;
       if (abort) input.signal.removeEventListener("abort", abort);
       unsubscribe?.();
       session?.dispose?.();
@@ -200,14 +220,8 @@ export class ManagerAgentRuntime {
   }
 }
 
-function redactText(value: string): string {
-  return value
-    .replace(/\b(?:sk|rk|pk)[_-][A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
-    .replace(/((?:api[_-]?key|authorization|token|password|secret)\s*[:=]\s*["']?)[^\s,"'}]+/gi, "$1[REDACTED]");
-}
-
 function redactError(error: unknown): string {
-  return redactText(error instanceof Error ? error.message : "AGENT_RUN_FAILED").slice(0, 500);
+  return redactPiText(error instanceof Error ? error.message : "AGENT_RUN_FAILED").slice(0, 500);
 }
 
 function errorCode(error: unknown): string {

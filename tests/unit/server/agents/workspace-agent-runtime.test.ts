@@ -24,9 +24,18 @@ describe("ManagerAgentRuntime", () => {
     const repository = baselineRepository();
     const executor = recordingExecutor(repository.complete);
     let sessionInput: ManagerAgentSessionInput | undefined;
-    const session = managerSession(async (tools) => {
+    const session = managerSession(async (tools, emit) => {
       const delegate = toolByName(tools, "delegate_expert");
       const action = toolByName(tools, "report_action");
+      emit({ type: "turn_start" });
+      emit({
+        type: "message_update",
+        assistantMessageEvent: {
+          type: "text_delta",
+          delta: "正在协调 token=top-secret",
+        },
+      });
+      emit({ type: "turn_end" });
       for (const expert of ["risks", "argument", "sources", "perspectives", "synthesis"] as const) {
         await executeTool(delegate, { expert });
       }
@@ -71,8 +80,12 @@ describe("ManagerAgentRuntime", () => {
     expect(session.prompt).toHaveBeenCalledWith(expect.stringContaining("基线分析"));
     expect(repository.events.map((event) => event.eventType)).toEqual([
       "agent.ui.run.started",
+      "agent.ui.text.started",
+      "agent.ui.text.delta",
+      "agent.ui.text.finished",
       "agent.ui.run.finished",
     ]);
+    expect(JSON.stringify(repository.events)).not.toContain("top-secret");
   });
 
   it("returns interrupted when Agent generation is cancelled", async () => {
@@ -366,13 +379,20 @@ function moduleVersions(argument = 1) {
   };
 }
 
-function managerSession(run?: (tools: ToolDefinition[]) => Promise<void>) {
+function managerSession(run?: (
+  tools: ToolDefinition[],
+  emit: (event: unknown) => void,
+) => Promise<void>) {
   let tools: ToolDefinition[] = [];
+  let listener = (_event: unknown) => {};
   return {
     set tools(value: ToolDefinition[]) { tools = value; },
-    prompt: vi.fn(async () => run?.(tools)),
+    prompt: vi.fn(async () => run?.(tools, (event) => listener(event))),
     waitForIdle: vi.fn(),
-    subscribe: vi.fn(() => () => {}),
+    subscribe: vi.fn((next: (event: unknown) => void) => {
+      listener = next;
+      return () => { listener = () => {}; };
+    }),
     abort: vi.fn(),
     dispose: vi.fn(),
   };

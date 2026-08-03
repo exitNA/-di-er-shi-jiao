@@ -27,7 +27,6 @@ import type {
 } from "@/features/analysis/server/analysis-repository";
 import { targetedReviewSchema } from "@/features/conversation/domain/contracts";
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
-import type { GenerationUsage } from "@/server/ai/structured-generator";
 import {
   calculateTokenCostUsd,
   formatTokenCostUsd,
@@ -35,6 +34,7 @@ import {
 import {
   draftReviewSchema,
   synthesisOutputSchema,
+  type GenerationUsage,
   type ExpertResult,
   type ExpertSuite,
 } from "./expert-suite";
