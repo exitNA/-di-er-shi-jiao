@@ -268,10 +268,13 @@ function updateOpik(
 function errorFromAttributes(
   attributes: Record<string, unknown>,
 ): Parameters<OpikSpan["update"]>[0]["errorInfo"] {
-  if (attributes.level !== "ERROR") return undefined;
   const message = typeof attributes.statusMessage === "string"
     ? attributes.statusMessage
     : "Observation failed";
+  if (attributes.level === "WARNING") {
+    return { exceptionType: "Cancelled", message, traceback: message };
+  }
+  if (attributes.level !== "ERROR") return undefined;
   return { exceptionType: "Error", message, traceback: message };
 }
 

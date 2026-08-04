@@ -334,6 +334,10 @@ describe("Pi observability", () => {
     }));
     const opikGeneration = opik.spans.find(({ input }) => input.name === "pi.generation");
     expect(opikGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+      errorInfo: expect.objectContaining({
+        exceptionType: "Cancelled",
+        message: "request cancelled",
+      }),
       output: expect.objectContaining({
         assistant: expect.objectContaining({ stopReason: "aborted" }),
       }),

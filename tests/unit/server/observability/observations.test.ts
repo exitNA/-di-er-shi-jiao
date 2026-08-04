@@ -201,6 +201,26 @@ describe("dual observations", () => {
     }));
   });
 
+  it("maps warning cancellations to Opik without replacing the output", async () => {
+    await withAnalysisTrace(traceInput, () => withObservation(
+      { name: "pi.generation", asType: "generation", input: { prompt: "完整提示词" } },
+      async (observation) => observation.update({
+        level: "WARNING",
+        statusMessage: "request cancelled",
+        output: { assistant: "partial output" },
+      }),
+    ));
+
+    expect(opik.span.update).toHaveBeenCalledWith(expect.objectContaining({
+      errorInfo: {
+        exceptionType: "Cancelled",
+        message: "request cancelled",
+        traceback: "request cancelled",
+      },
+      output: { assistant: "partial output" },
+    }));
+  });
+
   it("keeps an explicit observation active as the Opik parent", async () => {
     await withAnalysisTrace(traceInput, async () => {
       const generation = startObservation({
