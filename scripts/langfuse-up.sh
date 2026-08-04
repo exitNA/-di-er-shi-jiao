@@ -27,4 +27,4 @@ append_if_missing REDIS_AUTH "$(openssl rand -hex 32)"
 append_if_missing MINIO_ROOT_PASSWORD "$(openssl rand -hex 32)"
 append_if_missing LANGFUSE_INIT_USER_PASSWORD "$(openssl rand -hex 32)"
 
-docker compose --env-file .env -f compose.langfuse.yaml up -d --wait --wait-timeout 180
+docker compose --env-file .env -f docker/langfuse/compose.yaml up -d --wait --wait-timeout 180

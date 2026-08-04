@@ -10,7 +10,7 @@ const read = (file: string) => readFile(join(process.cwd(), file), "utf8");
 it("starts Langfuse with generated local credentials and persistent services", async () => {
   const [packageJson, compose, envExample] = await Promise.all([
     read("package.json"),
-    read("compose.langfuse.yaml"),
+    read("docker/langfuse/compose.yaml"),
     read(".env.example"),
   ]);
 
@@ -24,7 +24,7 @@ it("starts Langfuse with generated local credentials and persistent services", a
 });
 
 it("keeps the Langfuse stack separate from the application Compose project", async () => {
-  await expect(read("compose.langfuse.yaml")).resolves.toMatch(/^name: second-perspective-langfuse$/m);
+  await expect(read("docker/langfuse/compose.yaml")).resolves.toMatch(/^name: second-perspective-langfuse$/m);
 });
 
 it("stores generated local Langfuse credentials in the ignored .env file", async () => {
@@ -33,11 +33,11 @@ it("stores generated local Langfuse credentials in the ignored .env file", async
 });
 
 it("binds the Langfuse web interface to the local loopback address", async () => {
-  await expect(read("compose.langfuse.yaml")).resolves.toContain('"127.0.0.1:3000:3000"');
+  await expect(read("docker/langfuse/compose.yaml")).resolves.toContain('"127.0.0.1:3000:3000"');
 });
 
 it("disables ClickHouse clustering for the local single-node stack", async () => {
-  await expect(read("compose.langfuse.yaml")).resolves.toContain(
+  await expect(read("docker/langfuse/compose.yaml")).resolves.toContain(
     'CLICKHOUSE_CLUSTER_ENABLED: "false"',
   );
 });
@@ -46,7 +46,7 @@ it("waits for real Langfuse Web and Worker HTTP readiness", async () => {
   const [{ stdout }, startup] = await Promise.all([
     run(
       "docker",
-      ["compose", "-f", "compose.langfuse.yaml", "config", "--format", "json"],
+      ["compose", "-f", "docker/langfuse/compose.yaml", "config", "--format", "json"],
       {
         cwd: process.cwd(),
         env: {

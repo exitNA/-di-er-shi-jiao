@@ -31,7 +31,7 @@ services:
   clickhouse-init:
     image: alpine:3.23.3
     volumes:
-      - ./config/opik/clickhouse:/clickhouse_config_files:ro
+      - ./config/clickhouse:/clickhouse_config_files:ro
       - opik_clickhouse_config:/config
     command: >-
       sh -c "cp -r /clickhouse_config_files/* /config/ && chown -R 1000:1000 /config"
@@ -181,7 +181,7 @@ services:
     ports:
       - "127.0.0.1:5173:5173"
     volumes:
-      - ./config/opik/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./config/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro
     depends_on:
       backend:
         condition: service_healthy

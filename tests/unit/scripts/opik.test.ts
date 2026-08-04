@@ -7,7 +7,7 @@ const read = (file: string) => readFile(join(process.cwd(), file), "utf8");
 it("defines the local Opik stack and application connection settings", async () => {
   const [packageJson, compose, envExample, serverEnv] = await Promise.all([
     read("package.json"),
-    read("compose.opik.yaml"),
+    read("docker/opik/compose.yaml"),
     read(".env.example"),
     read("src/server/config/env.ts"),
   ]);
@@ -25,25 +25,25 @@ it("starts from the official local topology and preserves volumes when stopping"
   const [startup, shutdown, compose] = await Promise.all([
     read("scripts/opik-up.sh"),
     read("scripts/opik-down.sh"),
-    read("compose.opik.yaml"),
+    read("docker/opik/compose.yaml"),
   ]);
 
   expect(startup).not.toContain("git clone");
-  expect(startup).toContain("--env-file .env -f compose.opik.yaml up -d --wait --wait-timeout 180");
-  expect(shutdown).toContain("--env-file .env -f compose.opik.yaml down");
+  expect(startup).toContain("--env-file .env -f docker/opik/compose.yaml up -d --wait --wait-timeout 180");
+  expect(shutdown).toContain("--env-file .env -f docker/opik/compose.yaml down");
   expect(shutdown).not.toContain("--volumes");
   for (const service of ["mysql", "redis", "clickhouse", "zookeeper", "minio", "backend", "python-backend", "frontend"]) {
     expect(compose).toMatch(new RegExp(`^  ${service}:`, "m"));
   }
   expect(compose).not.toContain(".opik/");
-  expect(compose).toContain("./config/opik/clickhouse:/clickhouse_config_files:ro");
-  expect(compose).toContain("./config/opik/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro");
+  expect(compose).toContain("./config/clickhouse:/clickhouse_config_files:ro");
+  expect(compose).toContain("./config/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro");
 });
 
 it("uses the same lightweight public dependency images as Langfuse", async () => {
   const [opik, langfuse] = await Promise.all([
-    read("compose.opik.yaml"),
-    read("compose.langfuse.yaml"),
+    read("docker/opik/compose.yaml"),
+    read("docker/langfuse/compose.yaml"),
   ]);
 
   for (const image of [
