@@ -257,7 +257,7 @@ function updateOpik(
     updates.metadata = attributes.metadata as typeof updates.metadata;
   }
   if (typeof attributes.model === "string") updates.model = attributes.model;
-  const usage = numberRecord(attributes.usageDetails);
+  const usage = opikUsage(attributes.usageDetails);
   if (usage) updates.usage = usage;
   const cost = numberRecord(attributes.costDetails);
   if (cost?.total !== undefined) updates.totalEstimatedCost = cost.total;
@@ -284,6 +284,16 @@ function numberRecord(value: unknown): Record<string, number> | undefined {
     (entry): entry is [string, number] => typeof entry[1] === "number",
   );
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function opikUsage(value: unknown): Record<string, number> | undefined {
+  const usage = numberRecord(value);
+  if (!usage) return undefined;
+  const result: Record<string, number> = {};
+  if (usage.input !== undefined) result.prompt_tokens = usage.input;
+  if (usage.output !== undefined) result.completion_tokens = usage.output;
+  if (usage.total !== undefined) result.total_tokens = usage.total;
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function opikSpanType(type: ObservationType): "general" | "llm" | "tool" {

@@ -132,7 +132,7 @@ describe("dual observations", () => {
     expect(opik.span.update).toHaveBeenCalledWith(expect.objectContaining({
       output: "完整输出",
       model: "test-model",
-      usage: { input: 2, output: 1 },
+      usage: { prompt_tokens: 2, completion_tokens: 1 },
     }));
     expect(opik.span.end).toHaveBeenCalledOnce();
     expect(opik.trace.end).toHaveBeenCalledOnce();

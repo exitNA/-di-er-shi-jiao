@@ -274,7 +274,11 @@ describe("Pi observability", () => {
       expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
         output: expect.objectContaining({ assistant: expect.anything() }),
         model: "observed-model",
-        usage: expect.objectContaining({ input: 13, output: 8, total: 21 }),
+        usage: {
+          prompt_tokens: 13,
+          completion_tokens: 8,
+          total_tokens: 21,
+        },
         totalEstimatedCost: 0.021,
       }));
       expect(opikExpertGeneration?.end).toHaveBeenCalledOnce();
