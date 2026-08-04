@@ -7,6 +7,8 @@ const baseEnv = {
   DATABASE_URL: "postgres://app:app@database/second_perspective",
   AUTH_SECRET: "production-auth-secret-that-is-at-least-32-bytes",
   ANALYSIS_RUNTIME: "in-process",
+  OPIK_URL_OVERRIDE: "http://localhost:5173/api",
+  OPIK_PROJECT_NAME: "second-perspective",
 };
 const realAgentEnv = {
   LLM_BASE_URL: "https://llm.example/v1",
