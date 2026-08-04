@@ -28,13 +28,16 @@ it("starts from the official local topology and preserves volumes when stopping"
     read("compose.opik.yaml"),
   ]);
 
-  expect(startup).toContain("git clone --depth=1 https://github.com/comet-ml/opik.git");
+  expect(startup).not.toContain("git clone");
   expect(startup).toContain("--env-file .env -f compose.opik.yaml up -d --wait --wait-timeout 180");
   expect(shutdown).toContain("--env-file .env -f compose.opik.yaml down");
   expect(shutdown).not.toContain("--volumes");
   for (const service of ["mysql", "redis", "clickhouse", "zookeeper", "minio", "backend", "python-backend", "frontend"]) {
     expect(compose).toMatch(new RegExp(`^  ${service}:`, "m"));
   }
+  expect(compose).not.toContain(".opik/");
+  expect(compose).toContain("./config/opik/clickhouse:/clickhouse_config_files:ro");
+  expect(compose).toContain("./config/opik/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro");
 });
 
 it("uses the same lightweight public dependency images as Langfuse", async () => {
