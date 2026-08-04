@@ -18,7 +18,7 @@ import {
 } from "@langfuse/tracing";
 import { Opik, type Span as OpikSpan, type Trace as OpikTrace } from "opik";
 
-import { loadServerEnv } from "@/server/config/env";
+import { loadObservabilityEnv } from "@/server/config/env";
 
 type ObservationType = "agent" | "chain" | "generation" | "tool" | "retriever";
 type SupportedObservation =
@@ -304,7 +304,7 @@ function opikSpanType(type: ObservationType): "general" | "llm" | "tool" {
 
 function getOpikClient(): Opik {
   if (!opikClient) {
-    const env = loadServerEnv();
+    const env = loadObservabilityEnv();
     opikClient = new Opik({
       apiUrl: env.OPIK_URL_OVERRIDE,
       projectName: env.OPIK_PROJECT_NAME,

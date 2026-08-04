@@ -65,7 +65,7 @@ vi.mock("@/server/config/env", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/server/config/env")>();
   return {
     ...original,
-    loadServerEnv: () => ({
+    loadObservabilityEnv: () => ({
       OPIK_PROJECT_NAME: "second-perspective",
       OPIK_URL_OVERRIDE: "http://127.0.0.1:5173/api",
     }),

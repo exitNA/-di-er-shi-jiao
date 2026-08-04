@@ -42,7 +42,7 @@ vi.mock("opik", () => ({
 }));
 
 vi.mock("@/server/config/env", () => ({
-  loadServerEnv: () => ({
+  loadObservabilityEnv: () => ({
     OPIK_PROJECT_NAME: "second-perspective",
     OPIK_URL_OVERRIDE: "http://127.0.0.1:5173/api",
   }),

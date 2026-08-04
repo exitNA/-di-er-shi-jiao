@@ -1,4 +1,4 @@
-import { loadServerEnv } from "@/server/config/env";
+import { loadObservabilityEnv, loadServerEnv } from "@/server/config/env";
 import { flushObservationClient } from "@/server/observability/observations";
 
 type TracingRuntime = { forceFlush(): Promise<void> };
@@ -27,6 +27,7 @@ export async function flushObservability(): Promise<void> {
 
 async function startSdk(isolated: boolean): Promise<TracingRuntime> {
   const env = loadServerEnv();
+  loadObservabilityEnv();
   const [
     { LangfuseSpanProcessor },
     { setLangfuseTracerProvider },
