@@ -53,4 +53,15 @@ describe("OpikAgentGraph", () => {
     expect(data).toMatch(/classDef cancelled /);
     expect(data).toMatch(/classDef failed /);
   });
+
+  it("normalizes line breaks in name and type labels", () => {
+    const graph = new OpikAgentGraph();
+    graph.start({ name: "manager\r\nchild", type: "chain\ntool" });
+
+    const { data } = graph.definition();
+
+    expect(data).toContain("manager / child");
+    expect(data).toContain("chain / tool #1");
+    expect(data).not.toMatch(/[\r\n](?:child|tool)/);
+  });
 });

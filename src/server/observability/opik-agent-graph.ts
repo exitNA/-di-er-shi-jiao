@@ -53,6 +53,7 @@ export class OpikAgentGraph {
 
 function escapeMermaidLabel(value: string): string {
   return value
+    .replaceAll(/\r\n?|\n/g, " / ")
     .replaceAll("\\", "\\\\")
     .replaceAll("&", "&amp;")
     .replaceAll('"', "&quot;")
