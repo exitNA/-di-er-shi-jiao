@@ -159,6 +159,32 @@ describe("dual observations", () => {
     expect(exporter.getFinishedSpans()).toHaveLength(2);
   });
 
+  it("adds the system prompt to Opik generation messages without changing Langfuse input", async () => {
+    const input = {
+      systemPrompt: "完整 system prompt",
+      messages: [{ role: "user", content: "用户任务" }],
+    };
+
+    await withAnalysisTrace(traceInput, () => withObservation(
+      { name: "pi.generation", asType: "generation", input: {} },
+      async (observation) => observation.update({ input }),
+    ));
+    await processor.forceFlush();
+
+    expect(opik.span.update).toHaveBeenCalledWith(expect.objectContaining({
+      input: expect.objectContaining({
+        messages: [
+          { role: "system", content: "完整 system prompt" },
+          { role: "user", content: "用户任务" },
+        ],
+      }),
+    }));
+    expect(langfuseObservations()).toContainEqual(expect.objectContaining({
+      name: "pi.generation",
+      input,
+    }));
+  });
+
   it("ends both observations with the same error and rethrows it", async () => {
     const failure = new Error("provider failed");
 
