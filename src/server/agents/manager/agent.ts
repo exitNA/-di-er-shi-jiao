@@ -8,8 +8,8 @@ import {
 import type { WorkspaceToolArtifact } from "@/features/analysis/domain/workspace";
 import {
   withAnalysisTrace,
-  withLangfuseObservation,
-} from "@/server/observability/langfuse";
+  withObservation,
+} from "@/server/observability/observations";
 import {
   type ExpertSession,
   type ExpertSessionInput,
@@ -113,7 +113,7 @@ export class ManagerAgentRuntime {
         kind: context.kind,
         material: context.material,
       },
-      (analysisObservation) => withLangfuseObservation(
+      (analysisObservation) => withObservation(
         {
           name: "manager",
           asType: "agent",

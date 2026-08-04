@@ -5,7 +5,7 @@ import path from "node:path";
 import { Type, type TSchema } from "typebox";
 import { z } from "zod";
 
-import { withLangfuseObservation } from "@/server/observability/langfuse";
+import { withObservation } from "@/server/observability/observations";
 import type { ExpertResult } from "../expert-suite";
 
 export type ExpertRunRequest = {
@@ -75,7 +75,7 @@ export function createExpertHarness<T>(input: ExpertHarnessInput<T>): ExpertHarn
       const agentId = request.operation ?? path.basename(input.resourceDir);
       const systemPrompt = request.systemPrompt ?? input.systemPrompt;
       const prompt = request.prompt ?? request.material ?? "";
-      return withLangfuseObservation(
+      return withObservation(
         {
           name: `expert.${agentId}`,
           asType: "agent",

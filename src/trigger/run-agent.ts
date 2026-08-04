@@ -2,8 +2,8 @@ import { task } from "@trigger.dev/sdk";
 import { executeAgentRun } from "@/features/analysis/server/analysis-dispatcher";
 import { getContainer } from "@/server/container";
 import {
-  flushLangfuseTracing,
-  startLangfuseTracing,
+  flushObservability,
+  startObservability,
 } from "@/server/observability/tracing";
 
 export const runAgentTask = task({
@@ -12,7 +12,7 @@ export const runAgentTask = task({
     payload: { workspaceId: string; agentRunId: string },
     { ctx, signal },
   ) => {
-    await startLangfuseTracing({ isolated: true });
+    await startObservability({ isolated: true });
     try {
       const container = getContainer();
       return await executeAgentRun(
@@ -25,7 +25,7 @@ export const runAgentTask = task({
         container.analysisRepository,
       );
     } finally {
-      await flushLangfuseTracing();
+      await flushObservability();
     }
   },
 });

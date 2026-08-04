@@ -31,7 +31,7 @@ import {
   calculateTokenCostUsd,
   formatTokenCostUsd,
 } from "@/server/observability/cost";
-import { withLangfuseObservation } from "@/server/observability/langfuse";
+import { withObservation } from "@/server/observability/observations";
 import {
   draftReviewSchema,
   synthesisOutputSchema,
@@ -136,7 +136,7 @@ export class WorkspaceToolExecutor {
       synthesis: "synthesize_report",
     };
     const toolName = toolNames[input.expert];
-    return withLangfuseObservation(
+    return withObservation(
       { name: `workspace.${toolName}`, asType: "tool", input },
       async (observation) => {
         const execution = input.task && input.task.length > 2_000
@@ -157,7 +157,7 @@ export class WorkspaceToolExecutor {
   }
 
   runReportAction(input: RunReportActionInput): Promise<AgentToolResult> {
-    return withLangfuseObservation(
+    return withObservation(
       { name: `workspace.${input.action}`, asType: "tool", input },
       async (observation) => {
         const execution = await this.executeDetailed(input.action, input);

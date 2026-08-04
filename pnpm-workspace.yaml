@@ -19,3 +19,4 @@ minimumReleaseAgeExclude:
   - playwright@1.62.1
   - tldts-core@7.4.10
   - tldts@7.4.10
+  - opik@2.2.17

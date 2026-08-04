@@ -1,24 +1,28 @@
 import { loadServerEnv } from "@/server/config/env";
+import { flushObservationClient } from "@/server/observability/observations";
 
 type TracingRuntime = { forceFlush(): Promise<void> };
 
-export async function startLangfuseTracing(
+export async function startObservability(
   options: { isolated?: boolean } = {},
 ): Promise<void> {
   const state = globalThis as typeof globalThis & {
-    __secondPerspectiveLangfuseTracing?: Promise<TracingRuntime>;
+    __secondPerspectiveObservability?: Promise<TracingRuntime>;
   };
-  state.__secondPerspectiveLangfuseTracing ??= startSdk(options.isolated ?? false);
-  await state.__secondPerspectiveLangfuseTracing;
+  state.__secondPerspectiveObservability ??= startSdk(options.isolated ?? false);
+  await state.__secondPerspectiveObservability;
 }
 
-export async function flushLangfuseTracing(): Promise<void> {
+export async function flushObservability(): Promise<void> {
   const state = globalThis as typeof globalThis & {
-    __secondPerspectiveLangfuseTracing?: Promise<TracingRuntime>;
+    __secondPerspectiveObservability?: Promise<TracingRuntime>;
   };
-  if (state.__secondPerspectiveLangfuseTracing) {
-    await (await state.__secondPerspectiveLangfuseTracing).forceFlush();
-  }
+  await Promise.all([
+    state.__secondPerspectiveObservability
+      ? state.__secondPerspectiveObservability.then((runtime) => runtime.forceFlush())
+      : Promise.resolve(),
+    flushObservationClient(),
+  ]);
 }
 
 async function startSdk(isolated: boolean): Promise<TracingRuntime> {

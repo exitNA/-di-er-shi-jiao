@@ -2,9 +2,17 @@ import { getLangfuseTracerProvider } from "@langfuse/tracing";
 import { trace } from "@opentelemetry/api";
 import { afterEach, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({
+  flushObservationClient: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/server/observability/observations", () => ({
+  flushObservationClient: mocks.flushObservationClient,
+}));
+
 import {
-  flushLangfuseTracing,
-  startLangfuseTracing,
+  flushObservability,
+  startObservability,
 } from "@/server/observability/tracing";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -19,9 +27,12 @@ it("uses a non-global provider for local-only Trigger observations", async () =>
   vi.stubEnv("LANGFUSE_BASE_URL", "http://127.0.0.1:3000");
   vi.stubEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-test");
   vi.stubEnv("LANGFUSE_SECRET_KEY", "sk-lf-test");
+  vi.stubEnv("OPIK_URL_OVERRIDE", "http://127.0.0.1:5173/api");
+  vi.stubEnv("OPIK_PROJECT_NAME", "second-perspective");
 
-  await startLangfuseTracing({ isolated: true });
+  await startObservability({ isolated: true });
 
   expect(getLangfuseTracerProvider()).not.toBe(trace.getTracerProvider());
-  await expect(flushLangfuseTracing()).resolves.toBeUndefined();
+  await expect(flushObservability()).resolves.toBeUndefined();
+  expect(mocks.flushObservationClient).toHaveBeenCalledOnce();
 });

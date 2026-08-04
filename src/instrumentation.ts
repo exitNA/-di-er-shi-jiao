@@ -23,6 +23,6 @@ export async function register(): Promise<void> {
       { category: ["logtape", "meta"], lowestLevel: "warning", sinks: ["console"] },
     ],
   });
-  const { startLangfuseTracing } = await import("@/server/observability/tracing");
-  await startLangfuseTracing();
+  const { startObservability } = await import("@/server/observability/tracing");
+  await startObservability();
 }

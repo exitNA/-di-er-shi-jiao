@@ -3,7 +3,7 @@ import { getDomain } from "tldts";
 import { Type } from "typebox";
 
 import { externalSource } from "../../shared/prompt";
-import { withLangfuseObservation } from "@/server/observability/langfuse";
+import { withObservation } from "@/server/observability/observations";
 import type { SearchClient, SearchResult } from "@/server/search/search-client";
 
 export type SourceCandidate = SearchResult & {
@@ -28,7 +28,7 @@ export function createSourceSearchTool(input: SourceSearchToolInput): ToolDefini
     parameters: Type.Object({}),
     async execute(_id, _params, signal) {
       const queries = sourceQueries(input.material);
-      const { candidates } = await withLangfuseObservation(
+      const { candidates } = await withObservation(
         {
           name: "sources.search",
           asType: "retriever",

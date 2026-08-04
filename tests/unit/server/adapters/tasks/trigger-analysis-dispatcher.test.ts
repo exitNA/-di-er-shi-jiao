@@ -4,9 +4,9 @@ import { TriggerAnalysisDispatcher } from "@/server/adapters/tasks/trigger-analy
 
 const mocks = vi.hoisted(() => ({
   cancel: vi.fn(),
-  flushLangfuseTracing: vi.fn(),
+  flushObservability: vi.fn(),
   getContainer: vi.fn(),
-  startLangfuseTracing: vi.fn(),
+  startObservability: vi.fn(),
   trigger: vi.fn(),
 }));
 
@@ -19,8 +19,8 @@ vi.mock("@/server/container", () => ({
   getContainer: mocks.getContainer,
 }));
 vi.mock("@/server/observability/tracing", () => ({
-  flushLangfuseTracing: mocks.flushLangfuseTracing,
-  startLangfuseTracing: mocks.startLangfuseTracing,
+  flushObservability: mocks.flushObservability,
+  startObservability: mocks.startObservability,
 }));
 
 import { runAgentTask } from "@/trigger/run-agent";
@@ -54,8 +54,8 @@ describe("TriggerAnalysisDispatcher", () => {
 
 describe("runAgentTask", () => {
   beforeEach(() => {
-    mocks.startLangfuseTracing.mockResolvedValue(undefined);
-    mocks.flushLangfuseTracing.mockResolvedValue(undefined);
+    mocks.startObservability.mockResolvedValue(undefined);
+    mocks.flushObservability.mockResolvedValue(undefined);
   });
 
   it("passes Trigger cancellation into the Agent runtime", async () => {
@@ -92,9 +92,9 @@ describe("runAgentTask", () => {
     }));
   });
 
-  it("isolates and flushes Langfuse before constructing the Trigger runtime", async () => {
+  it("isolates and flushes observability before constructing the Trigger runtime", async () => {
     const calls: string[] = [];
-    mocks.startLangfuseTracing.mockImplementation(async () => { calls.push("tracing"); });
+    mocks.startObservability.mockImplementation(async () => { calls.push("tracing"); });
     mocks.getContainer.mockImplementation(() => {
       calls.push("container");
       return {
@@ -114,8 +114,8 @@ describe("runAgentTask", () => {
     );
 
     expect(calls).toEqual(["tracing", "container"]);
-    expect(mocks.startLangfuseTracing).toHaveBeenCalledWith({ isolated: true });
-    expect(mocks.flushLangfuseTracing).toHaveBeenCalledOnce();
+    expect(mocks.startObservability).toHaveBeenCalledWith({ isolated: true });
+    expect(mocks.flushObservability).toHaveBeenCalledOnce();
   });
 });
 

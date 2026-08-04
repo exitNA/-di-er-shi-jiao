@@ -7,7 +7,7 @@ import { createSourceSearchTool } from "@/server/agents/sources/tools/search";
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
 import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
-import { withAnalysisTrace } from "@/server/observability/langfuse";
+import { withAnalysisTrace } from "@/server/observability/observations";
 import { createStubExpertSuite } from "../../../helpers/stub-expert-suite";
 
 const exporter = new tracing.InMemorySpanExporter();

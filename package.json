@@ -79,6 +79,7 @@
     "lucide-react": "^0.468.0",
     "next": "16.2.12",
     "next-themes": "^0.4.6",
+    "opik": "2.2.17",
     "pg": "^8.22.0",
     "react": "19.2.4",
     "react-day-picker": "^9.14.0",
