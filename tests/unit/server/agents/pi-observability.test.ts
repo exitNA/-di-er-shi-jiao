@@ -266,6 +266,9 @@ describe("Pi observability", () => {
         costDetails: expect.objectContaining({ total: 0.021 }),
       }));
       expect(opikManagerGenerations).toHaveLength(2);
+      expect(opikManagerGenerations[1]?.update).toHaveBeenCalledWith(expect.objectContaining({
+        input: managerGenerations[1]?.input,
+      }));
       expect(opikExpertGeneration?.input).toEqual(expect.objectContaining({
         name: "pi.generation",
         type: "llm",
