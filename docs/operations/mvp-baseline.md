@@ -195,36 +195,39 @@ pnpm exec trigger.dev deploy
 状态冲突返回 `409`。成功响应是最新工作空间快照。操作前后读取 `GET /api/analyses/<workspaceId>`，
 确认新 run 的状态与已完成模块版本没有回退。所有恢复都通过 Agent run 生命周期执行。
 
-## 8. 安全日志与 Langfuse
+## 8. 安全日志与双观测平台
 
 结构化日志只允许记录 `workspaceId`、`agentRunId`、`operation`、`errorCode`、`durationMs`、`attempt` 等运行元数据。不得记录完整原文、用户名、密码、认证会话令牌、prompt、模型 response、API key 或任意未经筛选的异常对象。
 
-启动独立的本地 Langfuse 栈：
+启动独立的本地 Langfuse 与 Opik 栈：
 
 ```bash
 pnpm langfuse:up
+pnpm opik:up
 ```
 
-该命令首次运行时将缺失参数写入未跟踪的 `.env`，预置本地组织、项目、管理员和项目 API key。为 Trigger.dev worker 配置相同值：
+两个命令首次运行时都会将缺失参数写入未跟踪的 `.env`。Langfuse 预置本地组织、项目、管理员和项目 API key；Opik 首次运行会把官方部署资源下载到未跟踪的 `.opik`。为 Trigger.dev worker 配置相同值：
 
 ```dotenv
 LANGFUSE_BASE_URL=http://localhost:3000
 LANGFUSE_PUBLIC_KEY=<.env 中的值>
 LANGFUSE_SECRET_KEY=<.env 中的值>
 LANGFUSE_TRACING_ENVIRONMENT=local
+OPIK_URL_OVERRIDE=http://localhost:5173/api
+OPIK_PROJECT_NAME=second-perspective
 ```
 
-重启 Web 应用和 Trigger.dev worker 后访问 <http://localhost:3000>，使用 `local@example.com` 和 `.env` 中的 `LANGFUSE_INIT_USER_PASSWORD` 登录。详细的原始材料、system prompt、模型消息与输出、工具完整输入与结果、信源 URL、token、估算成本、错误和取消状态只进入 Langfuse observation；结构化日志和前端 SSE 继续使用既有脱敏数据。
+重启 Web 应用和 Trigger.dev worker 后访问 Langfuse <http://localhost:3000>，使用 `local@example.com` 和 `.env` 中的 `LANGFUSE_INIT_USER_PASSWORD` 登录；Opik 位于 <http://localhost:5173>。详细的原始材料、system prompt、模型消息与输出、工具完整输入与结果、信源 URL、token、估算成本、错误和取消状态只进入两套观测平台；结构化日志和前端 SSE 继续使用既有脱敏数据。
 
-执行一次包含在线搜索的分析，并在 Langfuse UI 中验收：
+执行一次包含在线搜索的分析，并在 Langfuse 与 Opik UI 中并排验收：
 
-1. 只有一个 `analysis.baseline` trace，并携带对应用户、workspace 和原始材料。
-2. trace 内可展开 `manager`、专家 observation 与 `pi.generation`；generation 展示实际 model、token 和成本。
-3. 专家委派、`sources.search`、审校、修订和发布 observation 均嵌套在活动 trace 中；搜索输出包含候选结果及完整来源 URL。
-4. 制造一次可恢复搜索或模型失败，确认对应 observation 为 `ERROR`、保留错误信息，既有恢复流程仍可继续。
+1. 两边各有一个对应同次运行的 `analysis.baseline` trace，并携带对应用户、workspace 和原始材料。
+2. 两边的 trace 都可展开 `manager`、专家与 `pi.generation`；generation 展示完整输入输出、实际 model、token 和成本。
+3. 两边的专家委派、`sources.search`、审校、修订和发布动作均嵌套在 generation 或活动父节点下；工具展示完整输入与结果，搜索输出包含候选结果及完整来源 URL。
+4. 制造一次取消及一次可恢复搜索或模型失败，确认两边对应节点都已结束并保留错误或取消状态，既有恢复流程仍可继续。
 5. 浏览器 SSE 和结构化日志中没有原始材料、prompt、模型完整 response、API key 或 Langfuse 密钥。
 
-本地调试结束后运行 `pnpm langfuse:down`；该命令保留 volumes 和历史观察数据。
+本地调试结束后运行 `pnpm langfuse:down` 和 `pnpm opik:down`；两个命令都保留 volumes 和历史观察数据。
 
 告警至少覆盖：任务 `recoverable`、信源降级率、专家成功率、首模块 P95、完整报告 P95 和估算 token 成本。
 

@@ -3,6 +3,55 @@ import { LangfuseOtelSpanAttributes } from "@langfuse/tracing";
 import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+const opik = vi.hoisted(() => {
+  const spans: Array<{
+    end: ReturnType<typeof vi.fn>;
+    input: Record<string, unknown>;
+    parentName: string;
+    span: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  }> = [];
+  const nameOf = (input: Record<string, unknown>): string =>
+    typeof input.name === "string" ? input.name : "unknown";
+  const createSpan = (input: Record<string, unknown>, parentName: string) => {
+    const end = vi.fn();
+    const span = vi.fn((childInput: Record<string, unknown>) =>
+      createSpan(childInput, nameOf(input))
+    );
+    const update = vi.fn();
+    spans.push({ end, input, parentName, span, update });
+    return { end, span, update };
+  };
+  const client = {
+    flush: vi.fn(async () => undefined),
+    trace: vi.fn((input: Record<string, unknown>) => ({
+      end: vi.fn(),
+      span: vi.fn((childInput: Record<string, unknown>) =>
+        createSpan(childInput, nameOf(input))
+      ),
+      update: vi.fn(),
+    })),
+  };
+  return { client, spans };
+});
+
+vi.mock("opik", () => ({
+  Opik: vi.fn(function Opik() {
+    return opik.client;
+  }),
+}));
+
+vi.mock("@/server/config/env", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/server/config/env")>();
+  return {
+    ...original,
+    loadServerEnv: () => ({
+      OPIK_PROJECT_NAME: "second-perspective",
+      OPIK_URL_OVERRIDE: "http://127.0.0.1:5173/api",
+    }),
+  };
+});
+
 import { createSourceSearchTool } from "@/server/agents/sources/tools/search";
 import type { AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import type { AnalysisRepository } from "@/features/analysis/server/analysis-repository";
@@ -39,7 +88,11 @@ function observations() {
 
 describe("agent tool observability", () => {
   beforeAll(() => sdk.start());
-  beforeEach(() => exporter.reset());
+  beforeEach(() => {
+    exporter.reset();
+    opik.spans.length = 0;
+    vi.clearAllMocks();
+  });
   afterAll(() => sdk.shutdown());
 
   it("records complete search input, source URLs and results under the active trace", async () => {
@@ -83,6 +136,17 @@ describe("agent tool observability", () => {
       traceId: analysis?.traceId,
       parentSpanId: analysis?.spanId,
     }));
+    const opikSearch = opik.spans.find(({ input }) => input.name === "sources.search");
+    expect(opikSearch).toEqual(expect.objectContaining({
+      input: expect.objectContaining({ name: "sources.search", type: "general" }),
+      parentName: "analysis.baseline",
+    }));
+    expect(opikSearch?.update).toHaveBeenCalledWith(expect.objectContaining({
+      output: expect.objectContaining({
+        candidates: [expect.objectContaining({ url: "https://example.com/report" })],
+      }),
+    }));
+    expect(opikSearch?.end).toHaveBeenCalledOnce();
   });
 
   it("marks recovered production failures as errors and records persisted versions", async () => {
@@ -136,6 +200,14 @@ describe("agent tool observability", () => {
       statusMessage: "REQUIRED_TOOL_UNAVAILABLE",
       output: { ok: false, code: "REQUIRED_TOOL_UNAVAILABLE" },
     }));
+    expect(opik.spans).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        input: expect.objectContaining({ name: "workspace.analyze_argument", type: "tool" }),
+      }),
+      expect.objectContaining({
+        input: expect.objectContaining({ name: "workspace.publish_report", type: "tool" }),
+      }),
+    ]));
   });
 
   it("records and rethrows source search errors", async () => {
@@ -155,6 +227,12 @@ describe("agent tool observability", () => {
       statusMessage: "search failed",
       output: { error: "search failed" },
     }));
+    const opikSearch = opik.spans.find(({ input }) => input.name === "sources.search");
+    expect(opikSearch?.update).toHaveBeenCalledWith(expect.objectContaining({
+      errorInfo: expect.objectContaining({ message: "search failed" }),
+      output: { error: "search failed" },
+    }));
+    expect(opikSearch?.end).toHaveBeenCalledOnce();
   });
 });
 

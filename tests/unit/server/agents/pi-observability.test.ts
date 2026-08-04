@@ -13,6 +13,65 @@ import { Type } from "typebox";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+const opik = vi.hoisted(() => {
+  const spans: Array<{
+    end: ReturnType<typeof vi.fn>;
+    input: Record<string, unknown>;
+    parentName: string;
+    span: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  }> = [];
+  const traces: Array<{
+    end: ReturnType<typeof vi.fn>;
+    input: Record<string, unknown>;
+    span: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  }> = [];
+
+  const nameOf = (input: Record<string, unknown>): string =>
+    typeof input.name === "string" ? input.name : "unknown";
+  const createSpan = (input: Record<string, unknown>, parentName: string) => {
+    const end = vi.fn();
+    const span = vi.fn((childInput: Record<string, unknown>) =>
+      createSpan(childInput, nameOf(input))
+    );
+    const update = vi.fn();
+    spans.push({ end, input, parentName, span, update });
+    return { end, span, update };
+  };
+  const client = {
+    flush: vi.fn(async () => undefined),
+    trace: vi.fn((input: Record<string, unknown>) => {
+      const end = vi.fn();
+      const span = vi.fn((childInput: Record<string, unknown>) =>
+        createSpan(childInput, nameOf(input))
+      );
+      const update = vi.fn();
+      traces.push({ end, input, span, update });
+      return { end, span, update };
+    }),
+  };
+
+  return { client, spans, traces };
+});
+
+vi.mock("opik", () => ({
+  Opik: vi.fn(function Opik() {
+    return opik.client;
+  }),
+}));
+
+vi.mock("@/server/config/env", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/server/config/env")>();
+  return {
+    ...original,
+    loadServerEnv: () => ({
+      OPIK_PROJECT_NAME: "second-perspective",
+      OPIK_URL_OVERRIDE: "http://127.0.0.1:5173/api",
+    }),
+  };
+});
+
 import { moduleTypes, type AnalysisSnapshot } from "@/features/analysis/domain/contracts";
 import {
   ManagerAgentRuntime,
@@ -72,7 +131,12 @@ function observations() {
 
 describe("Pi observability", () => {
   beforeAll(() => sdk.start());
-  beforeEach(() => exporter.reset());
+  beforeEach(() => {
+    exporter.reset();
+    opik.spans.length = 0;
+    opik.traces.length = 0;
+    vi.clearAllMocks();
+  });
   afterAll(() => sdk.shutdown());
 
   it("records the production manager, delegate, expert and Pi hierarchy", async () => {
@@ -148,6 +212,12 @@ describe("Pi observability", () => {
       const expertGeneration = recorded.find(({ name, parentSpanId }) =>
         name === "pi.generation" && parentSpanId === expertObservation?.spanId
       );
+      const opikManagerGenerations = opik.spans.filter(({ input, parentName }) =>
+        input.name === "pi.generation" && parentName === "manager"
+      );
+      const opikExpertGeneration = opik.spans.find(({ input, parentName }) =>
+        input.name === "pi.generation" && parentName === "expert.argument"
+      );
 
       expect(manager).toEqual(expect.objectContaining({
         type: "agent",
@@ -194,6 +264,23 @@ describe("Pi observability", () => {
         model: "observed-model",
         usageDetails: expect.objectContaining({ input: 13, output: 8, total: 21 }),
         costDetails: expect.objectContaining({ total: 0.021 }),
+      }));
+      expect(opikManagerGenerations).toHaveLength(2);
+      expect(opikExpertGeneration?.input).toEqual(expect.objectContaining({
+        name: "pi.generation",
+        type: "llm",
+        input: expect.objectContaining({ systemPrompt: expect.any(String) }),
+      }));
+      expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+        output: expect.objectContaining({ assistant: expect.anything() }),
+        model: "observed-model",
+        usage: expect.objectContaining({ input: 13, output: 8, total: 21 }),
+        totalEstimatedCost: 0.021,
+      }));
+      expect(opikExpertGeneration?.end).toHaveBeenCalledOnce();
+      expect(opik.spans).toContainEqual(expect.objectContaining({
+        input: expect.objectContaining({ name: "expert.argument", type: "general" }),
+        parentName: "pi.generation",
       }));
     } finally {
       await rm(resourceRoot, { force: true, recursive: true });
@@ -245,6 +332,13 @@ describe("Pi observability", () => {
         assistant: expect.objectContaining({ stopReason: "aborted" }),
       }),
     }));
+    const opikGeneration = opik.spans.find(({ input }) => input.name === "pi.generation");
+    expect(opikGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+      output: expect.objectContaining({
+        assistant: expect.objectContaining({ stopReason: "aborted" }),
+      }),
+    }));
+    expect(opikGeneration?.end).toHaveBeenCalledOnce();
   });
 
   it("records provider errors when Pi does not retry", async () => {
@@ -276,6 +370,14 @@ describe("Pi observability", () => {
         assistant: expect.objectContaining({ stopReason: "error" }),
       }),
     }));
+    const opikGeneration = opik.spans.find(({ input }) => input.name === "pi.generation");
+    expect(opikGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+      errorInfo: expect.objectContaining({ message: "provider unavailable" }),
+      output: expect.objectContaining({
+        assistant: expect.objectContaining({ stopReason: "error" }),
+      }),
+    }));
+    expect(opikGeneration?.end).toHaveBeenCalledOnce();
   });
 
   it("uses production model prices to record a nonzero generation cost", async () => {

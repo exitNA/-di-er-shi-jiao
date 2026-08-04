@@ -13,7 +13,11 @@ import {
   SettingsManager,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { startObservation, type LangfuseGeneration } from "@langfuse/tracing";
+
+import {
+  startObservation,
+  type ObservationHandle,
+} from "@/server/observability/observations";
 
 export interface PiSessionInput {
   systemPrompt: string;
@@ -77,21 +81,13 @@ export async function createProjectPiModelRuntime(input: PiModelRuntimeInput) {
 
 export async function createPiSession(input: PiSessionInput): Promise<AgentSession> {
   const settingsManager = SettingsManager.inMemory();
-  let generation: LangfuseGeneration | undefined;
+  let generation: ObservationHandle | undefined;
   let generationContext: Context | undefined;
   let turnIndex = 0;
 
   const endOpenGeneration = (error?: unknown): void => {
     if (!generation) return;
-    if (error !== undefined) {
-      const message = error instanceof Error ? error.message : String(error);
-      generation.update({
-        level: "ERROR",
-        statusMessage: message,
-        output: { error: message },
-      });
-    }
-    generation.end();
+    generation.end(error);
     generation = undefined;
     generationContext = undefined;
   };
@@ -112,29 +108,30 @@ export async function createPiSession(input: PiSessionInput): Promise<AgentSessi
       (pi) => {
         pi.on("before_agent_start", () => ({ systemPrompt: input.systemPrompt }));
         pi.on("turn_start", (event) => {
-          turnIndex = event.turnIndex;
-        });
-        pi.on("context", (event) => {
           if (generation) {
             endOpenGeneration(new Error("Pi started a new model turn before ending the previous one"));
           }
-          generation = startObservation(
-            "pi.generation",
-            {
-              input: {
-                systemPrompt: input.systemPrompt,
-                messages: event.messages,
-              },
-              model: input.model.id,
-              metadata: {
-                agentId: path.basename(input.resourceDir),
-                modelId: input.model.id,
-                turnIndex,
-              },
+          turnIndex = event.turnIndex;
+          generation = startObservation({
+            name: "pi.generation",
+            asType: "generation",
+            input: { systemPrompt: input.systemPrompt },
+            metadata: {
+              agentId: path.basename(input.resourceDir),
+              modelId: input.model.id,
+              turnIndex: String(turnIndex),
             },
-            { asType: "generation" },
-          );
+          });
           generationContext = trace.setSpan(otelContext.active(), generation.otelSpan);
+        });
+        pi.on("context", (event) => {
+          generation?.update({
+            input: {
+              systemPrompt: input.systemPrompt,
+              messages: event.messages,
+            },
+            model: input.model.id,
+          });
         });
         pi.on("turn_end", (event) => {
           if (!generation) return;
