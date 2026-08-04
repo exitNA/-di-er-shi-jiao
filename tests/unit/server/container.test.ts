@@ -16,6 +16,8 @@ const baseEnv = {
   LANGFUSE_BASE_URL: "http://localhost:3000",
   LANGFUSE_PUBLIC_KEY: "pk-lf-test",
   LANGFUSE_SECRET_KEY: "sk-lf-test",
+  OPIK_URL_OVERRIDE: "http://localhost:5173/api",
+  OPIK_PROJECT_NAME: "second-perspective",
 } as const;
 const realServiceKeys = [
   "LLM_BASE_URL",
