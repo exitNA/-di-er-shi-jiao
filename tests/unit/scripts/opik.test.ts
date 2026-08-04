@@ -36,3 +36,19 @@ it("starts from the official local topology and preserves volumes when stopping"
     expect(compose).toMatch(new RegExp(`^  ${service}:`, "m"));
   }
 });
+
+it("uses the same lightweight public dependency images as Langfuse", async () => {
+  const [opik, langfuse] = await Promise.all([
+    read("compose.opik.yaml"),
+    read("compose.langfuse.yaml"),
+  ]);
+
+  for (const image of [
+    "docker.io/clickhouse/clickhouse-server:25.12",
+    "redis:8.6.4-alpine",
+    "cgr.dev/chainguard/minio:latest",
+  ]) {
+    expect(opik).toContain(image);
+    expect(langfuse).toContain(image);
+  }
+});
