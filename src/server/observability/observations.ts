@@ -1,9 +1,14 @@
 import "server-only";
 
-import { context, createContextKey, ROOT_CONTEXT } from "@opentelemetry/api";
+import {
+  context,
+  ROOT_CONTEXT,
+  trace as otelTrace,
+  type Span as OtelSpan,
+} from "@opentelemetry/api";
 import {
   propagateAttributes,
-  startActiveObservation,
+  startObservation as startLangfuseObservation,
   type LangfuseAgent,
   type LangfuseChain,
   type LangfuseGeneration,
@@ -11,7 +16,7 @@ import {
   type LangfuseRetriever,
   type LangfuseTool,
 } from "@langfuse/tracing";
-import { Opik, type Span, type Trace } from "opik";
+import { Opik, type Span as OpikSpan, type Trace as OpikTrace } from "opik";
 
 import { loadServerEnv } from "@/server/config/env";
 
@@ -23,7 +28,7 @@ type SupportedObservation =
   | LangfuseTool
   | LangfuseRetriever;
 
-type ObservationInput = {
+export type ObservationInput = {
   name: string;
   asType: ObservationType;
   input: unknown;
@@ -32,44 +37,44 @@ type ObservationInput = {
 
 export type ObservationHandle = {
   update(attributes: Record<string, unknown>): void;
+  end(error?: unknown): void;
+  readonly otelSpan: OtelSpan;
 };
 
 type OpikTarget =
-  | { kind: "span"; value: Span }
-  | { kind: "trace"; value: Trace };
+  | { kind: "span"; value: OpikSpan }
+  | { kind: "trace"; value: OpikTrace };
 
-const opikParentKey = createContextKey("second-perspective.opik-parent");
+const opikParents = new WeakMap<OtelSpan, OpikTrace | OpikSpan>();
 let opikClient: Opik | undefined;
 
-export async function withObservation<T>(
-  input: ObservationInput,
-  run: (observation: ObservationHandle) => Promise<T>,
-): Promise<T> {
-  const activeParent = context.active().getValue(opikParentKey) as Trace | Span | undefined;
+export function startObservation(input: ObservationInput): ObservationHandle {
+  const activeParent = activeOpikParent();
   const fallbackTrace = activeParent ? undefined : getOpikClient().trace({
     name: input.name,
     input: input.input as Parameters<Opik["trace"]>[0]["input"],
     metadata: input.metadata,
   });
   const parent = activeParent ?? fallbackTrace;
-  const span = parent?.span({
+  if (!parent) throw new Error("Opik observation parent is unavailable");
+  const opikSpan = parent.span({
     name: input.name,
     type: opikSpanType(input.asType),
-    input: input.input as Parameters<Trace["span"]>[0]["input"],
+    input: input.input as Parameters<OpikTrace["span"]>[0]["input"],
     metadata: input.metadata,
   });
-  if (!span) throw new Error("Opik observation parent is unavailable");
+  return createObservationHandle(
+    createLangfuseObservation(input),
+    { kind: "span", value: opikSpan },
+    fallbackTrace,
+  );
+}
 
-  try {
-    return await runLangfuseObservation(
-      input,
-      { kind: "span", value: span },
-      run,
-    );
-  } finally {
-    span.end();
-    fallbackTrace?.end();
-  }
+export async function withObservation<T>(
+  input: ObservationInput,
+  run: (observation: ObservationHandle) => Promise<T>,
+): Promise<T> {
+  return runObservation(startObservation(input), run);
 }
 
 export async function withAnalysisTrace<T>(
@@ -87,93 +92,129 @@ export async function withAnalysisTrace<T>(
     userId: input.userId,
     workspaceId: input.workspaceId,
   };
-  const trace = getOpikClient().trace({
-    name,
-    input: { material: input.material },
-    metadata,
-  });
-
-  try {
-    return await context.with(
-      ROOT_CONTEXT.setValue(opikParentKey, trace),
-      () => propagateAttributes(
-        {
-          traceName: name,
-          userId: input.userId,
-          sessionId: input.workspaceId,
-          metadata: {
-            kind: input.kind,
-            workspaceId: input.workspaceId,
-          },
-        },
-        () => runLangfuseObservation(
-          {
+  return context.with(ROOT_CONTEXT, () => propagateAttributes(
+    {
+      traceName: name,
+      userId: input.userId,
+      sessionId: input.workspaceId,
+      metadata: {
+        kind: input.kind,
+        workspaceId: input.workspaceId,
+      },
+    },
+    () => {
+      const opikTrace = getOpikClient().trace({
+        name,
+        input: { material: input.material },
+        metadata,
+      });
+      return runObservation(
+        createObservationHandle(
+          createLangfuseObservation({
             name,
             asType: "chain",
             input: { material: input.material },
             metadata,
-          },
-          { kind: "trace", value: trace },
-          run,
+          }),
+          { kind: "trace", value: opikTrace },
         ),
-      ),
-    );
-  } finally {
-    trace.end();
-  }
+        run,
+      );
+    },
+  ));
 }
 
 export async function flushObservationClient(): Promise<void> {
   await getOpikClient().flush();
 }
 
-async function runLangfuseObservation<T>(
-  input: ObservationInput,
-  opikTarget: OpikTarget,
+async function runObservation<T>(
+  observation: ObservationHandle,
   run: (observation: ObservationHandle) => Promise<T>,
 ): Promise<T> {
-  const observe = async (langfuse: SupportedObservation): Promise<T> => {
-    let outputUpdated = false;
-    langfuse.update({ input: input.input, metadata: input.metadata });
-    const handle: ObservationHandle = {
-      update: (attributes) => {
-        if (Object.hasOwn(attributes, "output")) outputUpdated = true;
-        langfuse.update(attributes as LangfuseObservationAttributes);
-        updateOpik(opikTarget, attributes);
-      },
-    };
-
-    try {
-      const result = await context.with(
-        context.active().setValue(opikParentKey, opikTarget.value),
-        () => run(handle),
-      );
-      if (result !== undefined && !outputUpdated) handle.update({ output: result });
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      langfuse.update({
-        level: "ERROR",
-        statusMessage: message,
-        output: { error: message },
-      });
-      updateOpik(opikTarget, { output: { error: message } }, error);
-      throw error;
-    }
+  let outputUpdated = false;
+  const handle: ObservationHandle = {
+    end: observation.end,
+    otelSpan: observation.otelSpan,
+    update: (attributes) => {
+      if (Object.hasOwn(attributes, "output")) outputUpdated = true;
+      observation.update(attributes);
+    },
   };
 
+  try {
+    const result = await context.with(
+      otelTrace.setSpan(context.active(), observation.otelSpan),
+      () => run(handle),
+    );
+    if (result !== undefined && !outputUpdated) handle.update({ output: result });
+    return result;
+  } catch (error) {
+    observation.end(error);
+    throw error;
+  } finally {
+    observation.end();
+  }
+}
+
+function createObservationHandle(
+  langfuse: SupportedObservation,
+  opikTarget: OpikTarget,
+  fallbackTrace?: OpikTrace,
+): ObservationHandle {
+  let ended = false;
+  opikParents.set(langfuse.otelSpan, opikTarget.value);
+
+  return {
+    otelSpan: langfuse.otelSpan,
+    update(attributes) {
+      if (ended) return;
+      langfuse.update(attributes as LangfuseObservationAttributes);
+      updateOpik(opikTarget, attributes);
+    },
+    end(error) {
+      if (ended) return;
+      ended = true;
+      if (error !== undefined) {
+        const message = error instanceof Error ? error.message : String(error);
+        langfuse.update({
+          level: "ERROR",
+          statusMessage: message,
+          output: { error: message },
+        });
+        const attributes = { output: { error: message } };
+        updateOpik(opikTarget, attributes, error);
+        if (fallbackTrace) {
+          updateOpik({ kind: "trace", value: fallbackTrace }, attributes, error);
+        }
+      }
+      opikParents.delete(langfuse.otelSpan);
+      langfuse.end();
+      opikTarget.value.end();
+      fallbackTrace?.end();
+    },
+  };
+}
+
+function createLangfuseObservation(input: ObservationInput): SupportedObservation {
+  const attributes = { input: input.input, metadata: input.metadata };
   switch (input.asType) {
     case "agent":
-      return startActiveObservation(input.name, observe, { asType: "agent" });
+      return startLangfuseObservation(input.name, attributes, { asType: "agent" });
     case "chain":
-      return startActiveObservation(input.name, observe, { asType: "chain" });
+      return startLangfuseObservation(input.name, attributes, { asType: "chain" });
     case "generation":
-      return startActiveObservation(input.name, observe, { asType: "generation" });
+      return startLangfuseObservation(input.name, attributes, { asType: "generation" });
     case "tool":
-      return startActiveObservation(input.name, observe, { asType: "tool" });
+      return startLangfuseObservation(input.name, attributes, { asType: "tool" });
     case "retriever":
-      return startActiveObservation(input.name, observe, { asType: "retriever" });
+      return startLangfuseObservation(input.name, attributes, { asType: "retriever" });
   }
+}
+
+function activeOpikParent(): OpikTrace | OpikSpan | undefined {
+  const activeSpan = otelTrace.getSpan(context.active());
+  return activeSpan ? opikParents.get(activeSpan) : undefined;
 }
 
 function updateOpik(
@@ -190,7 +231,7 @@ function updateOpik(
       };
 
   if (target.kind === "trace") {
-    const updates: Parameters<Trace["update"]>[0] = {};
+    const updates: Parameters<OpikTrace["update"]>[0] = {};
     if (Object.hasOwn(attributes, "input")) {
       updates.input = attributes.input as typeof updates.input;
     }
@@ -205,7 +246,7 @@ function updateOpik(
     return;
   }
 
-  const updates: Parameters<Span["update"]>[0] = {};
+  const updates: Parameters<OpikSpan["update"]>[0] = {};
   if (Object.hasOwn(attributes, "input")) {
     updates.input = attributes.input as typeof updates.input;
   }
@@ -226,7 +267,7 @@ function updateOpik(
 
 function errorFromAttributes(
   attributes: Record<string, unknown>,
-): Parameters<Span["update"]>[0]["errorInfo"] {
+): Parameters<OpikSpan["update"]>[0]["errorInfo"] {
   if (attributes.level !== "ERROR") return undefined;
   const message = typeof attributes.statusMessage === "string"
     ? attributes.statusMessage

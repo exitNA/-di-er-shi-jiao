@@ -2,15 +2,21 @@ import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
   LangfuseOtelSpanAttributes,
 } from "@langfuse/tracing";
+import { context, trace as otelTrace } from "@opentelemetry/api";
 import { NodeSDK, tracing } from "@opentelemetry/sdk-node";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const opik = vi.hoisted(() => {
-  const span = {
+  const childSpan = {
     end: vi.fn(),
     span: vi.fn(),
+    update: vi.fn(),
+  };
+  const span = {
+    end: vi.fn(),
+    span: vi.fn(() => childSpan),
     update: vi.fn(),
   };
   const trace = {
@@ -23,6 +29,7 @@ const opik = vi.hoisted(() => {
       flush: vi.fn(async () => undefined),
       trace: vi.fn(() => trace),
     },
+    childSpan,
     span,
     trace,
   };
@@ -42,6 +49,7 @@ vi.mock("@/server/config/env", () => ({
 }));
 
 import {
+  startObservation,
   withAnalysisTrace,
   withObservation,
 } from "@/server/observability/observations";
@@ -190,6 +198,63 @@ describe("dual observations", () => {
     expect(langfuseObservations()).toContainEqual(expect.objectContaining({
       name: "sources.search",
       output: { candidates: ["source-1"] },
+    }));
+  });
+
+  it("keeps an explicit observation active as the Opik parent", async () => {
+    await withAnalysisTrace(traceInput, async () => {
+      const generation = startObservation({
+        name: "pi.generation",
+        asType: "generation",
+        input: { prompt: "完整提示词" },
+      });
+      generation.update({ output: "完整输出", model: "test-model" });
+
+      await context.with(
+        otelTrace.setSpan(context.active(), generation.otelSpan),
+        () => withObservation(
+          { name: "workspace.search", asType: "tool", input: { query: "证据" } },
+          async () => "found",
+        ),
+      );
+      generation.end();
+    });
+    await processor.forceFlush();
+
+    expect(opik.span.span).toHaveBeenCalledWith(expect.objectContaining({
+      name: "workspace.search",
+      type: "tool",
+    }));
+    expect(opik.childSpan.end).toHaveBeenCalledOnce();
+    expect(langfuseObservations()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "pi.generation", output: "完整输出" }),
+      expect.objectContaining({ name: "workspace.search", output: "found" }),
+    ]));
+  });
+
+  it("ends an explicit observation with an error once", async () => {
+    const failure = new Error("provider failed");
+
+    await withAnalysisTrace(traceInput, async () => {
+      const generation = startObservation({
+        name: "pi.failed",
+        asType: "generation",
+        input: { prompt: "完整提示词" },
+      });
+      generation.end(failure);
+      generation.end();
+    });
+    await processor.forceFlush();
+
+    expect(opik.span.update).toHaveBeenCalledWith(expect.objectContaining({
+      errorInfo: expect.objectContaining({ message: "provider failed" }),
+      output: { error: "provider failed" },
+    }));
+    expect(opik.span.end).toHaveBeenCalledOnce();
+    expect(langfuseObservations()).toContainEqual(expect.objectContaining({
+      name: "pi.failed",
+      level: "ERROR",
+      statusMessage: "provider failed",
     }));
   });
 
