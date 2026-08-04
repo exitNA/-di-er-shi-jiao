@@ -272,6 +272,15 @@ describe("Pi observability", () => {
         input: expect.objectContaining({ systemPrompt: expect.any(String) }),
       }));
       expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+        input: {
+          systemPrompt: "完整专家 system prompt",
+          messages: [expect.objectContaining({
+            role: "user",
+            content: [{ type: "text", text: "完整专家请求" }],
+          })],
+        },
+      }));
+      expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
         output: expect.objectContaining({ assistant: expect.anything() }),
         model: "observed-model",
         usage: {
