@@ -65,3 +65,10 @@ it("uses the same lightweight public dependency images as Langfuse", async () =>
   expect(opik).not.toMatch(/(?:image|OPIK_VERSION): .*latest/);
   expect(langfuse).not.toMatch(/image: .*latest/);
 });
+
+it("documents how operators inspect the incremental Opik agent graph", async () => {
+  const baseline = await read("docs/operations/mvp-baseline.md");
+
+  expect(baseline).toContain("Show Agent Graph");
+  expect(baseline).toContain("_opik_graph_definition");
+});

@@ -227,6 +227,13 @@ OPIK_PROJECT_NAME=second-perspective
 4. 制造一次取消及一次可恢复搜索或模型失败，确认两边对应节点都已结束并保留错误或取消状态，既有恢复流程仍可继续。
 5. 浏览器 SSE 和结构化日志中没有原始材料、prompt、模型完整 response、API key 或 Langfuse 密钥。
 
+### Opik 增量 Agent Graph 验收
+
+1. 启动一次基线分析，在 Opik 中打开对应的 `analysis.baseline` trace。
+2. 选择侧边栏的 `Show Agent Graph`，在分析执行期间刷新页面，确认图持续显示最新节点。
+3. 对照 span tree，确认重复、失败和已完成节点在图中与实际 span 状态一致；根 trace 的 `_opik_graph_definition` 为该图的定义来源。
+4. 确认节点标签仅含脱敏运行元数据，不包含原始材料、prompt、模型完整 response、token、密钥或其他敏感 payload。
+
 本地调试结束后运行 `pnpm langfuse:down` 和 `pnpm opik:down`；两个命令都保留 volumes 和历史观察数据。
 
 告警至少覆盖：任务 `recoverable`、信源降级率、专家成功率、首模块 P95、完整报告 P95 和估算 token 成本。
