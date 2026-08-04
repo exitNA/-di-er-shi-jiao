@@ -46,12 +46,12 @@ describe("AuthService", () => {
     ).resolves.toEqual({ ok: false, code: "INVALID_CREDENTIALS" });
   });
 
-  it("creates a session with 30-minute idle and 7-day absolute expiry", async () => {
+  it("creates a session that remains valid for seven days", async () => {
     const result = await service.register({ ...credentials, now: initialTime });
     expect(result.ok).toBe(true);
 
     const [session] = await db.select().from(sessions);
-    expect(session.idleExpiresAt).toEqual(new Date(initialTime.getTime() + 30 * 60 * 1000));
+    expect(session.idleExpiresAt).toEqual(new Date(initialTime.getTime() + 7 * 24 * 60 * 60 * 1000));
     expect(session.absoluteExpiresAt).toEqual(
       new Date(initialTime.getTime() + 7 * 24 * 60 * 60 * 1000),
     );
@@ -69,7 +69,9 @@ describe("AuthService", () => {
     await service.authenticate(result.sessionToken, touchedAt);
     [session] = await db.select().from(sessions);
     expect(session.lastSeenAt).toEqual(touchedAt);
-    expect(session.idleExpiresAt).toEqual(new Date(touchedAt.getTime() + 30 * 60_000));
+    expect(session.idleExpiresAt).toEqual(
+      new Date(initialTime.getTime() + 7 * 24 * 60 * 60 * 1000),
+    );
   });
 
   it("revokes a session on logout", async () => {

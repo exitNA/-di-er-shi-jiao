@@ -59,6 +59,9 @@ it("uses the same lightweight public dependency images as Langfuse", async () =>
     expect(langfuse).toContain(image);
   }
 
+  expect(opik).toContain("ANALYTICS_DB_QUERY_PARAMETERS");
+  expect(opik).toContain("compress=0");
+
   expect(opik).not.toMatch(/(?:image|OPIK_VERSION): .*latest/);
   expect(langfuse).not.toMatch(/image: .*latest/);
 });

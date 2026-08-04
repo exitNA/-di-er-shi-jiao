@@ -4,8 +4,8 @@ import type { PasswordHasher } from "./password";
 import type { AuthRepository, AuthResult, AuthSession, AuthenticatedUser } from "./auth-repository";
 import { createSessionToken, hashSessionToken } from "./session-token";
 
-const idleSessionMs = 30 * 60 * 1000;
 const absoluteSessionMs = 7 * 24 * 60 * 60 * 1000;
+const idleSessionMs = absoluteSessionMs;
 const registrationWindowMs = 60 * 60 * 1000;
 const loginWindowMs = 15 * 60 * 1000;
 

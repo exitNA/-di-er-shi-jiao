@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getLogger } from "@logtape/logtape";
 import { useRouter } from "next/navigation";
 
@@ -49,6 +49,17 @@ export function AuthDialog() {
   const [mode, setMode] = useState<AuthMode>("login");
   const registering = mode === "register";
 
+  function openLogin() {
+    setMode("login");
+    setOpen(true);
+    recordEvent("dialog_opened");
+  }
+
+  useEffect(() => {
+    window.addEventListener("auth:login", openLogin);
+    return () => window.removeEventListener("auth:login", openLogin);
+  });
+
   function handleSuccess() {
     setOpen(false);
     recordEvent("dialog_closed");
@@ -71,7 +82,7 @@ export function AuthDialog() {
         type="button"
         size="sm"
         onClick={() => {
-          setOpen(true);
+          openLogin();
           recordEvent("login_clicked");
         }}
         className="cursor-pointer rounded-full text-white hover:text-white"

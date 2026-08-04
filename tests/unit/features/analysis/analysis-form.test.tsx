@@ -36,3 +36,16 @@ it("submits the report journey with the keyboard", async () => {
 
   await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/analysis/job-1"));
 });
+
+it("opens login when an unauthenticated reader submits", async () => {
+  const user = userEvent.setup();
+  const openLogin = vi.fn();
+  window.addEventListener("auth:login", openLogin);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+  render(<AnalysisForm content="一段待分析的观点" compact />);
+
+  await user.click(screen.getByRole("button", { name: "展开第二视角" }));
+
+  await waitFor(() => expect(openLogin).toHaveBeenCalledOnce());
+  window.removeEventListener("auth:login", openLogin);
+});

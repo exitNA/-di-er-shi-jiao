@@ -41,7 +41,7 @@ export function AnalysisForm({ content: controlledContent, onContentChange, comp
         body: JSON.stringify({ content, idempotencyKey: idempotencyKey.current }),
       });
       if (response.status === 401) {
-        router.push("/login");
+        window.dispatchEvent(new Event("auth:login"));
         return;
       }
       const body = await response.json().catch(() => null) as { jobId?: string; code?: keyof typeof messages } | null;
