@@ -25,6 +25,8 @@
     "db:down": "docker compose down",
     "langfuse:up": "sh ./scripts/langfuse-up.sh",
     "langfuse:down": "sh ./scripts/langfuse-down.sh",
+    "opik:up": "sh ./scripts/opik-up.sh",
+    "opik:down": "sh ./scripts/opik-down.sh",
     "probe:llm": "tsx scripts/probe-llm.ts",
     "eval:run": "tsx scripts/evaluate-baseline.ts",
     "eval:score": "tsx scripts/score-evaluation.ts",

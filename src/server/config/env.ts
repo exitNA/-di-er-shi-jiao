@@ -20,6 +20,8 @@ const schema = z
     LANGFUSE_PUBLIC_KEY: z.string().min(1),
     LANGFUSE_SECRET_KEY: z.string().min(1),
     LANGFUSE_TRACING_ENVIRONMENT: z.literal("local").default("local"),
+    OPIK_URL_OVERRIDE: z.string().url(),
+    OPIK_PROJECT_NAME: z.literal("second-perspective"),
     LLM_INPUT_USD_PER_MILLION: z.coerce.number().nonnegative().default(0),
     LLM_OUTPUT_USD_PER_MILLION: z.coerce.number().nonnegative().default(0),
   })
