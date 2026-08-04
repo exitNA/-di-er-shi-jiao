@@ -284,6 +284,12 @@ describe("Pi observability", () => {
         },
       }));
       expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+        input: expertGeneration?.input,
+      }));
+      expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
+        output: expertGeneration?.output,
+      }));
+      expect(opikExpertGeneration?.update).toHaveBeenCalledWith(expect.objectContaining({
         output: expect.objectContaining({ assistant: expect.anything() }),
         model: "observed-model",
         usage: {
