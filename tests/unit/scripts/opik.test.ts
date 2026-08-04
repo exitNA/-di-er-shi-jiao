@@ -46,9 +46,12 @@ it("uses the same lightweight public dependency images as Langfuse", async () =>
   for (const image of [
     "docker.io/clickhouse/clickhouse-server:25.12",
     "redis:8.6.4-alpine",
-    "cgr.dev/chainguard/minio:latest",
+    "cgr.dev/chainguard/minio@sha256:5f2b82fe2edccafed7902f423f171ae5e6b8b363fae72441c0e0e4289dc45555",
   ]) {
     expect(opik).toContain(image);
     expect(langfuse).toContain(image);
   }
+
+  expect(opik).not.toMatch(/(?:image|OPIK_VERSION): .*latest/);
+  expect(langfuse).not.toMatch(/image: .*latest/);
 });

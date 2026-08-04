@@ -29,7 +29,7 @@ services:
       - opik_redis:/data
 
   clickhouse-init:
-    image: alpine:latest
+    image: alpine:3.23.3
     volumes:
       - ./.opik/deployment/docker-compose/clickhouse_config:/clickhouse_config_files:ro
       - opik_clickhouse_config:/config
@@ -87,7 +87,7 @@ services:
       - opik_zookeeper:/bitnami/zookeeper
 
   minio:
-    image: cgr.dev/chainguard/minio:latest
+    image: cgr.dev/chainguard/minio@sha256:5f2b82fe2edccafed7902f423f171ae5e6b8b363fae72441c0e0e4289dc45555
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-THAAIOSFODNN7EXAMPLE}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
@@ -102,7 +102,7 @@ services:
       - opik_minio:/data
 
   mc:
-    image: minio/mc:latest
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -110,7 +110,7 @@ services:
       /bin/sh -c "mc alias set s3 http://minio:9000 ${MINIO_ROOT_USER:-THAAIOSFODNN7EXAMPLE} ${MINIO_ROOT_PASSWORD:-LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY} --api S3v4 && mc mb --ignore-existing s3/public && mc anonymous set download s3/public"
 
   backend:
-    image: ghcr.io/comet-ml/opik/opik-backend:${OPIK_VERSION:-latest}
+    image: ghcr.io/comet-ml/opik/opik-backend:${OPIK_VERSION:-2.0.49}
     command: ["bash", "-c", "./run_db_migrations.sh && ./provision_agent_insights_readonly_user.sh && ./entrypoint.sh"]
     environment:
       STATE_DB_PROTOCOL: "jdbc:mysql://"
@@ -152,18 +152,18 @@ services:
       - /tmp
 
   python-backend:
-    image: ghcr.io/comet-ml/opik/opik-python-backend:${OPIK_VERSION:-latest}
+    image: ghcr.io/comet-ml/opik/opik-python-backend:${OPIK_VERSION:-2.0.49}
     privileged: true
     environment:
       OPIK_OTEL_SDK_ENABLED: "false"
-      PYTHON_CODE_EXECUTOR_IMAGE_TAG: ${OPIK_VERSION:-latest}
+      PYTHON_CODE_EXECUTOR_IMAGE_TAG: ${OPIK_VERSION:-2.0.49}
       PYTHON_CODE_EXECUTOR_STRATEGY: ${PYTHON_CODE_EXECUTOR_STRATEGY:-process}
       PYTHON_CODE_EXECUTOR_CONTAINERS_NUM: 5
       PYTHON_CODE_EXECUTOR_EXEC_TIMEOUT_IN_SECS: 3
       PYTHON_CODE_EXECUTOR_ALLOW_NETWORK: "false"
       PYTHON_CODE_EXECUTOR_CPU_SHARES: 512
       PYTHON_CODE_EXECUTOR_MEM_LIMIT: 256m
-      OPIK_VERSION: ${OPIK_VERSION:-latest}
+      OPIK_VERSION: ${OPIK_VERSION:-2.0.49}
       OPIK_REVERSE_PROXY_URL: http://frontend:5173/api
       PYTHON_BACKEND_PORT: 8000
       REDIS_URL: redis://:opik@redis:6379/0
@@ -178,7 +178,7 @@ services:
       - /var/lib/docker
 
   frontend:
-    image: ghcr.io/comet-ml/opik/opik-frontend:${OPIK_VERSION:-latest}
+    image: ghcr.io/comet-ml/opik/opik-frontend:${OPIK_VERSION:-2.0.49}
     ports:
       - "127.0.0.1:5173:5173"
     volumes:
@@ -187,7 +187,7 @@ services:
       backend:
         condition: service_healthy
     environment:
-      OPIK_VERSION: ${OPIK_VERSION:-latest}
+      OPIK_VERSION: ${OPIK_VERSION:-2.0.49}
       NGINX_PORT: 5173
       NGINX_CONF_SUFFIX: local
       OTEL_TRACE: off
