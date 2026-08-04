@@ -2,7 +2,7 @@ name: second-perspective-opik
 
 services:
   mysql:
-    image: mysql:8.4.2
+    image: mysql:9.5
     environment:
       MYSQL_ROOT_PASSWORD: opik
       MYSQL_DATABASE: opik
@@ -17,7 +17,7 @@ services:
       - opik_mysql:/var/lib/mysql
 
   redis:
-    image: redis:7.2.4-alpine3.19
+    image: redis:7
     command: redis-server --requirepass opik
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "6379"]
@@ -37,7 +37,7 @@ services:
       sh -c "cp -r /clickhouse_config_files/* /config/ && chown -R 1000:1000 /config"
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.3.16.16-alpine
+    image: clickhouse/clickhouse-server:25.12
     environment:
       CLICKHOUSE_DB: opik
       CLICKHOUSE_USER: opik
@@ -87,7 +87,7 @@ services:
       - opik_zookeeper:/bitnami/zookeeper
 
   minio:
-    image: minio/minio:RELEASE.2025-03-12T18-04-18Z
+    image: minio/minio:latest
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-THAAIOSFODNN7EXAMPLE}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
@@ -102,7 +102,7 @@ services:
       - opik_minio:/data
 
   mc:
-    image: minio/mc:RELEASE.2025-03-12T17-29-24Z
+    image: minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy
