@@ -252,6 +252,65 @@ describe("dual observations", () => {
     ]));
   });
 
+  it("updates the root graph while a manager and nested generation run", async () => {
+    await withAnalysisTrace(traceInput, async () => {
+      const manager = startObservation({
+        name: "manager",
+        asType: "agent",
+        input: { prompt: "管理分析" },
+      });
+
+      await context.with(
+        otelTrace.setSpan(context.active(), manager.otelSpan),
+        () => withObservation(
+          {
+            name: "pi.generation",
+            asType: "generation",
+            input: { prompt: "完整提示词" },
+          },
+          async () => "完整输出",
+        ),
+      );
+
+      const graphUpdatesBeforeManagerEnd = opik.trace.update.mock.calls.filter(
+        ([attributes]) => typeof attributes === "object" && attributes !== null
+          && "metadata" in attributes
+          && typeof attributes.metadata === "object" && attributes.metadata !== null
+          && "_opik_graph_definition" in attributes.metadata,
+      );
+      expect(graphUpdatesBeforeManagerEnd.length).toBeGreaterThan(0);
+
+      manager.end();
+
+      const graphUpdatesAfterManagerEnd = opik.trace.update.mock.calls.filter(
+        ([attributes]) => typeof attributes === "object" && attributes !== null
+          && "metadata" in attributes
+          && typeof attributes.metadata === "object" && attributes.metadata !== null
+          && "_opik_graph_definition" in attributes.metadata,
+      );
+      expect(graphUpdatesAfterManagerEnd.length)
+        .toBeGreaterThan(graphUpdatesBeforeManagerEnd.length);
+      expect(graphUpdatesAfterManagerEnd.at(-1)?.[0]).toEqual(expect.objectContaining({
+        metadata: expect.objectContaining({
+          _opik_graph_definition: expect.objectContaining({
+            data: expect.stringContaining("manager<br/>agent #1<br/>completed ·"),
+          }),
+        }),
+      }));
+    });
+    await processor.forceFlush();
+
+    expect(langfuseObservations()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "analysis.baseline", type: "chain" }),
+      expect.objectContaining({ name: "manager", type: "agent" }),
+      expect.objectContaining({
+        name: "pi.generation",
+        type: "generation",
+        output: "完整输出",
+      }),
+    ]));
+  });
+
   it("ends an explicit observation with an error once", async () => {
     const failure = new Error("provider failed");
 

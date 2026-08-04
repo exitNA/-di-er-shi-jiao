@@ -19,6 +19,7 @@ import {
 import { Opik, type Span as OpikSpan, type Trace as OpikTrace } from "opik";
 
 import { loadObservabilityEnv } from "@/server/config/env";
+import { OpikAgentGraph } from "@/server/observability/opik-agent-graph";
 
 type ObservationType = "agent" | "chain" | "generation" | "tool" | "retriever";
 type SupportedObservation =
@@ -45,17 +46,28 @@ type OpikTarget =
   | { kind: "span"; value: OpikSpan }
   | { kind: "trace"; value: OpikTrace };
 
-const opikParents = new WeakMap<OtelSpan, OpikTrace | OpikSpan>();
+type OpikGraphContext = {
+  opikParent: OpikTrace | OpikSpan;
+  graph: OpikAgentGraph;
+  nodeId?: string;
+  rootTrace: OpikTrace;
+  traceMetadata: Record<string, string>;
+  startedAt: number;
+};
+
+const opikContexts = new WeakMap<OtelSpan, OpikGraphContext>();
 let opikClient: Opik | undefined;
 
 export function startObservation(input: ObservationInput): ObservationHandle {
-  const activeParent = activeOpikParent();
-  const fallbackTrace = activeParent ? undefined : getOpikClient().trace({
+  const activeContext = activeOpikContext();
+  const graph = activeContext?.graph ?? new OpikAgentGraph();
+  const traceMetadata = activeContext?.traceMetadata ?? { ...input.metadata };
+  const fallbackTrace = activeContext ? undefined : getOpikClient().trace({
     name: input.name,
     input: input.input as Parameters<Opik["trace"]>[0]["input"],
-    metadata: input.metadata,
+    metadata: rootMetadata(graph, traceMetadata),
   });
-  const parent = activeParent ?? fallbackTrace;
+  const parent = activeContext?.opikParent ?? fallbackTrace;
   if (!parent) throw new Error("Opik observation parent is unavailable");
   const opikSpan = parent.span({
     name: input.name,
@@ -63,10 +75,24 @@ export function startObservation(input: ObservationInput): ObservationHandle {
     input: input.input as Parameters<OpikTrace["span"]>[0]["input"],
     metadata: input.metadata,
   });
+  const graphContext: OpikGraphContext = {
+    opikParent: opikSpan,
+    graph,
+    nodeId: graph.start({
+      name: input.name,
+      type: input.asType,
+      parentId: activeContext?.nodeId,
+    }),
+    rootTrace: activeContext?.rootTrace ?? fallbackTrace!,
+    traceMetadata,
+    startedAt: Date.now(),
+  };
+  updateRootGraph(graphContext);
   return createObservationHandle(
     createLangfuseObservation(input),
     { kind: "span", value: opikSpan },
     fallbackTrace,
+    graphContext,
   );
 }
 
@@ -103,11 +129,19 @@ export async function withAnalysisTrace<T>(
       },
     },
     () => {
+      const graph = new OpikAgentGraph();
       const opikTrace = getOpikClient().trace({
         name,
         input: { material: input.material },
-        metadata,
+        metadata: rootMetadata(graph, metadata),
       });
+      const graphContext: OpikGraphContext = {
+        opikParent: opikTrace,
+        graph,
+        rootTrace: opikTrace,
+        traceMetadata: metadata,
+        startedAt: Date.now(),
+      };
       return runObservation(
         createObservationHandle(
           createLangfuseObservation({
@@ -117,6 +151,8 @@ export async function withAnalysisTrace<T>(
             metadata,
           }),
           { kind: "trace", value: opikTrace },
+          undefined,
+          graphContext,
         ),
         run,
       );
@@ -161,14 +197,18 @@ function createObservationHandle(
   langfuse: SupportedObservation,
   opikTarget: OpikTarget,
   fallbackTrace?: OpikTrace,
+  graphContext?: OpikGraphContext,
 ): ObservationHandle {
   let ended = false;
-  opikParents.set(langfuse.otelSpan, opikTarget.value);
+  let graphState: "completed" | "cancelled" | "failed" = "completed";
+  if (graphContext) opikContexts.set(langfuse.otelSpan, graphContext);
 
   return {
     otelSpan: langfuse.otelSpan,
     update(attributes) {
       if (ended) return;
+      if (attributes.level === "ERROR") graphState = "failed";
+      if (attributes.level === "WARNING") graphState = "cancelled";
       langfuse.update(attributes as LangfuseObservationAttributes);
       updateOpik(opikTarget, attributes);
     },
@@ -176,6 +216,7 @@ function createObservationHandle(
       if (ended) return;
       ended = true;
       if (error !== undefined) {
+        graphState = "failed";
         const message = error instanceof Error ? error.message : String(error);
         langfuse.update({
           level: "ERROR",
@@ -188,7 +229,16 @@ function createObservationHandle(
           updateOpik({ kind: "trace", value: fallbackTrace }, attributes, error);
         }
       }
-      opikParents.delete(langfuse.otelSpan);
+      if (graphContext) {
+        if (graphContext.nodeId) {
+          graphContext.graph.end(graphContext.nodeId, {
+            state: graphState,
+            durationMs: Date.now() - graphContext.startedAt,
+          });
+        }
+        updateRootGraph(graphContext);
+        opikContexts.delete(langfuse.otelSpan);
+      }
       langfuse.end();
       opikTarget.value.end();
       fallbackTrace?.end();
@@ -212,9 +262,22 @@ function createLangfuseObservation(input: ObservationInput): SupportedObservatio
   }
 }
 
-function activeOpikParent(): OpikTrace | OpikSpan | undefined {
+function activeOpikContext(): OpikGraphContext | undefined {
   const activeSpan = otelTrace.getSpan(context.active());
-  return activeSpan ? opikParents.get(activeSpan) : undefined;
+  return activeSpan ? opikContexts.get(activeSpan) : undefined;
+}
+
+function rootMetadata(
+  graph: OpikAgentGraph,
+  traceMetadata: Record<string, string>,
+): Record<string, unknown> {
+  return { ...traceMetadata, _opik_graph_definition: graph.definition() };
+}
+
+function updateRootGraph(graphContext: OpikGraphContext): void {
+  graphContext.rootTrace.update({
+    metadata: rootMetadata(graphContext.graph, graphContext.traceMetadata),
+  });
 }
 
 function updateOpik(
