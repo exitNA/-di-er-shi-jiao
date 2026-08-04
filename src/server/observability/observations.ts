@@ -306,7 +306,7 @@ function updateOpik(
   if (target.kind === "trace") {
     const updates: Parameters<OpikTrace["update"]>[0] = {};
     if (Object.hasOwn(attributes, "input")) {
-      updates.input = opikInput(attributes.input) as typeof updates.input;
+      updates.input = attributes.input as typeof updates.input;
     }
     if (Object.hasOwn(attributes, "output")) {
       updates.output = attributes.output as typeof updates.output;
@@ -321,7 +321,7 @@ function updateOpik(
 
   const updates: Parameters<OpikSpan["update"]>[0] = {};
   if (Object.hasOwn(attributes, "input")) {
-    updates.input = opikInput(attributes.input) as typeof updates.input;
+    updates.input = attributes.input as typeof updates.input;
   }
   if (Object.hasOwn(attributes, "output")) {
     updates.output = attributes.output as typeof updates.output;
@@ -336,16 +336,6 @@ function updateOpik(
   if (cost?.total !== undefined) updates.totalEstimatedCost = cost.total;
   if (errorInfo) updates.errorInfo = errorInfo;
   target.value.update(updates);
-}
-
-function opikInput(input: unknown): unknown {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
-  const value = input as Record<string, unknown>;
-  if (typeof value.systemPrompt !== "string" || !Array.isArray(value.messages)) return input;
-  return {
-    ...value,
-    messages: [{ role: "system", content: value.systemPrompt }, ...value.messages],
-  };
 }
 
 function errorFromAttributes(
