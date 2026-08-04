@@ -30,12 +30,16 @@ it("starts from the official local topology and preserves volumes when stopping"
 
   expect(startup).not.toContain("git clone");
   expect(startup).toContain("--env-file .env -f docker/opik/compose.yaml up -d --wait --wait-timeout 180");
+  expect(startup).toContain("--profile init run --rm mc");
   expect(shutdown).toContain("--env-file .env -f docker/opik/compose.yaml down");
   expect(shutdown).not.toContain("--volumes");
   for (const service of ["mysql", "redis", "clickhouse", "zookeeper", "minio", "backend", "python-backend", "frontend"]) {
     expect(compose).toMatch(new RegExp(`^  ${service}:`, "m"));
   }
   expect(compose).not.toContain(".opik/");
+  expect(compose).toContain('command: ["bash", "-c", "./run_db_migrations.sh && ./entrypoint.sh"]');
+  expect(compose).not.toContain("provision_agent_insights_readonly_user.sh");
+  expect(compose).toContain("profiles: [\"init\"]");
   expect(compose).toContain("./config/clickhouse:/clickhouse_config_files:ro");
   expect(compose).toContain("./config/nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro");
 });
