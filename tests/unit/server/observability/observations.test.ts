@@ -53,6 +53,7 @@ import {
   withAnalysisTrace,
   withObservation,
 } from "@/server/observability/observations";
+import { OpikAgentGraph } from "@/server/observability/opik-agent-graph";
 
 const exporter = new tracing.InMemorySpanExporter();
 const processor = new LangfuseSpanProcessor({ exporter, exportMode: "immediate" });
@@ -293,7 +294,9 @@ describe("dual observations", () => {
       expect(graphUpdatesAfterManagerEnd.at(-1)?.[0]).toEqual(expect.objectContaining({
         metadata: expect.objectContaining({
           _opik_graph_definition: expect.objectContaining({
-            data: expect.stringContaining("manager<br/>agent #1<br/>completed ·"),
+            data: expect.stringMatching(
+              /(?=[\s\S]*analysis\.baseline<br\/>chain #1<br\/>running)(?=[\s\S]*manager<br\/>agent #2<br\/>completed ·)(?=[\s\S]*n1 --> n2)(?=[\s\S]*n2 --> n3)[\s\S]*/,
+            ),
           }),
         }),
       }));
@@ -311,6 +314,65 @@ describe("dual observations", () => {
     ]));
   });
 
+  it.each([
+    ["failed", async () => { throw new Error("provider failed"); }],
+    ["cancelled", async (observation: Parameters<Parameters<typeof withObservation>[1]>[0]) => {
+      observation.update({ level: "WARNING", statusMessage: "request cancelled" });
+    }],
+  ] as const)("writes a %s generation terminal state to the root graph", async (state, run) => {
+    const observation = () => withObservation(
+      { name: `pi.${state}`, asType: "generation", input: { prompt: "完整提示词" } },
+      run,
+    );
+
+    if (state === "failed") {
+      await expect(withAnalysisTrace(traceInput, observation)).rejects.toThrow("provider failed");
+    } else {
+      await withAnalysisTrace(traceInput, observation);
+    }
+
+    expect(opik.trace.update).toHaveBeenLastCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({
+        _opik_graph_definition: expect.objectContaining({
+          data: expect.stringContaining(`pi.${state}<br/>generation #2<br/>${state} ·`),
+        }),
+      }),
+    }));
+  });
+
+  it("continues and ends native observations when graph serialization fails", async () => {
+    const definition = vi.spyOn(OpikAgentGraph.prototype, "definition")
+      .mockImplementationOnce(() => { throw new Error("graph serialization failed"); });
+
+    try {
+      await expect(withAnalysisTrace(traceInput, () => withObservation(
+        { name: "pi.serialization", asType: "generation", input: {} },
+        async () => "complete",
+      ))).resolves.toBe("complete");
+    } finally {
+      definition.mockRestore();
+    }
+
+    expect(opik.span.end).toHaveBeenCalledOnce();
+    expect(opik.trace.end).toHaveBeenCalledOnce();
+  });
+
+  it("continues and ends native observations when graph metadata updating fails", async () => {
+    await expect(withAnalysisTrace(traceInput, async () => {
+      const generation = startObservation({
+        name: "pi.metadata",
+        asType: "generation",
+        input: {},
+      });
+      opik.trace.update.mockImplementationOnce(() => { throw new Error("graph update failed"); });
+      generation.end();
+      return "complete";
+    })).resolves.toBe("complete");
+
+    expect(opik.span.end).toHaveBeenCalledOnce();
+    expect(opik.trace.end).toHaveBeenCalledOnce();
+  });
+
   it("ends an explicit observation with an error once", async () => {
     const failure = new Error("provider failed");
 
@@ -321,7 +383,9 @@ describe("dual observations", () => {
         input: { prompt: "完整提示词" },
       });
       generation.end(failure);
+      const graphUpdatesAfterFirstEnd = opik.trace.update.mock.calls.length;
       generation.end();
+      expect(opik.trace.update).toHaveBeenCalledTimes(graphUpdatesAfterFirstEnd);
     });
     await processor.forceFlush();
 

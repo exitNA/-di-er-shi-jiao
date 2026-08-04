@@ -130,6 +130,7 @@ export async function withAnalysisTrace<T>(
     },
     () => {
       const graph = new OpikAgentGraph();
+      const nodeId = graph.start({ name, type: "chain" });
       const opikTrace = getOpikClient().trace({
         name,
         input: { material: input.material },
@@ -138,6 +139,7 @@ export async function withAnalysisTrace<T>(
       const graphContext: OpikGraphContext = {
         opikParent: opikTrace,
         graph,
+        nodeId,
         rootTrace: opikTrace,
         traceMetadata: metadata,
         startedAt: Date.now(),
@@ -271,13 +273,21 @@ function rootMetadata(
   graph: OpikAgentGraph,
   traceMetadata: Record<string, string>,
 ): Record<string, unknown> {
-  return { ...traceMetadata, _opik_graph_definition: graph.definition() };
+  try {
+    return { ...traceMetadata, _opik_graph_definition: graph.definition() };
+  } catch {
+    return traceMetadata;
+  }
 }
 
 function updateRootGraph(graphContext: OpikGraphContext): void {
-  graphContext.rootTrace.update({
-    metadata: rootMetadata(graphContext.graph, graphContext.traceMetadata),
-  });
+  try {
+    graphContext.rootTrace.update({
+      metadata: rootMetadata(graphContext.graph, graphContext.traceMetadata),
+    });
+  } catch {
+    return;
+  }
 }
 
 function updateOpik(
