@@ -1,10 +1,5 @@
 import { z } from "zod";
 
-const observabilitySchema = z.object({
-  OPIK_URL_OVERRIDE: z.string().url(),
-  OPIK_PROJECT_NAME: z.literal("second-perspective"),
-});
-
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -46,10 +41,4 @@ export type ServerEnv = z.infer<typeof schema>;
 
 export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   return schema.parse(source);
-}
-
-export function loadObservabilityEnv(
-  source: NodeJS.ProcessEnv = process.env,
-): z.infer<typeof observabilitySchema> {
-  return observabilitySchema.parse(source);
 }

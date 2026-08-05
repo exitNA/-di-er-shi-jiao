@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadObservabilityEnv, loadServerEnv } from "@/server/config/env";
+import { loadServerEnv } from "@/server/config/env";
 
 const baseEnv = {
   NODE_ENV: "production",
@@ -7,8 +7,6 @@ const baseEnv = {
   DATABASE_URL: "postgres://app:app@database/second_perspective",
   AUTH_SECRET: "production-auth-secret-that-is-at-least-32-bytes",
   ANALYSIS_RUNTIME: "in-process",
-  OPIK_URL_OVERRIDE: "http://localhost:5173/api",
-  OPIK_PROJECT_NAME: "second-perspective",
 };
 const realAgentEnv = {
   LLM_BASE_URL: "https://llm.example/v1",
@@ -44,24 +42,6 @@ describe("loadServerEnv", () => {
       ...langfuseEnv,
       TAVILY_API_KEY: "",
     }).TAVILY_API_KEY).toBeUndefined();
-  });
-
-  it("does not require local observability to construct the application container", () => {
-    const { OPIK_PROJECT_NAME: _project, OPIK_URL_OVERRIDE: _url, ...appEnv } = baseEnv;
-
-    expect(loadServerEnv({
-      ...appEnv,
-      ...realAgentEnv,
-      ...langfuseEnv,
-    }).LLM_MODEL_ID).toBe("test-model");
-  });
-
-  it("requires local Opik configuration when observability starts", () => {
-    expect(() => loadObservabilityEnv({})).toThrow(/OPIK_URL_OVERRIDE/);
-    expect(loadObservabilityEnv(baseEnv)).toEqual({
-      OPIK_PROJECT_NAME: "second-perspective",
-      OPIK_URL_OVERRIDE: "http://localhost:5173/api",
-    });
   });
 
   it("rejects missing LANGFUSE_SECRET_KEY instead of silently disabling tracing", () => {

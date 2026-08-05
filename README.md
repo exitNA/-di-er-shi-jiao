@@ -14,7 +14,6 @@ cp .env.example .env
 openssl rand -hex 32
 pnpm db:init:dev
 pnpm langfuse:up
-pnpm opik:up
 pnpm dev
 ```
 
@@ -23,19 +22,14 @@ pnpm dev
 配置 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；
 配置 `TAVILY_API_KEY` 后启用在线搜索。后台可使用 `in-process` 或 Trigger.dev。
 
-## 本地 Langfuse 与 Opik
+## 本地 Langfuse
 
 `pnpm langfuse:up` 启动独立的本地 Langfuse 栈，并在未跟踪的
 `.env` 生成项目连接信息和服务密钥。访问 <http://localhost:3000>，管理员密码可在
 `.env` 的 `LANGFUSE_INIT_USER_PASSWORD` 中查看。停止服务使用
 `pnpm langfuse:down`；该命令保留观察数据卷。
 
-`pnpm opik:up` 启动独立的本地 Opik 栈，首次运行会把官方部署资源下载到未跟踪的
-`.opik`，并在 `.env` 补齐本地连接信息。访问 <http://localhost:5173>。
-停止服务使用 `pnpm opik:down`；该命令同样保留观察数据卷。
-
-一次分析会同时写入两套平台。并排验收时，两边应展示同一个 analysis 下的 manager、
-专家、generation、搜索与报告动作，以及完整 I/O、token、成本、错误和取消状态。
+一次分析会写入 Langfuse，展示同一个 analysis 下的 manager、专家、generation、搜索与报告动作，以及完整 I/O、token、成本、错误和取消状态。
 这些完整数据只进入观测平台，不进入浏览器 SSE 或结构化日志。
 
 ## 集成测试

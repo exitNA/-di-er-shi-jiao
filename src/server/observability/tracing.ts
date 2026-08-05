@@ -1,5 +1,4 @@
-import { loadObservabilityEnv, loadServerEnv } from "@/server/config/env";
-import { flushObservationClient } from "@/server/observability/observations";
+import { loadServerEnv } from "@/server/config/env";
 
 type TracingRuntime = { forceFlush(): Promise<void> };
 
@@ -17,17 +16,13 @@ export async function flushObservability(): Promise<void> {
   const state = globalThis as typeof globalThis & {
     __secondPerspectiveObservability?: Promise<TracingRuntime>;
   };
-  await Promise.all([
-    state.__secondPerspectiveObservability
-      ? state.__secondPerspectiveObservability.then((runtime) => runtime.forceFlush())
-      : Promise.resolve(),
-    flushObservationClient(),
-  ]);
+  await (state.__secondPerspectiveObservability
+    ? state.__secondPerspectiveObservability.then((runtime) => runtime.forceFlush())
+    : Promise.resolve());
 }
 
 async function startSdk(isolated: boolean): Promise<TracingRuntime> {
   const env = loadServerEnv();
-  loadObservabilityEnv();
   const [
     { LangfuseSpanProcessor },
     { setLangfuseTracerProvider },

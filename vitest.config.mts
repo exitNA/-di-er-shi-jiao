@@ -15,10 +15,6 @@ export default defineConfig({
   },
   test: {
     environment: "happy-dom",
-    env: {
-      OPIK_PROJECT_NAME: "second-perspective",
-      OPIK_URL_OVERRIDE: "http://localhost:5173/api",
-    },
     setupFiles: "./vitest.setup.ts",
     clearMocks: true,
     exclude: [...configDefaults.exclude, "**/.worktrees/**"],
