@@ -167,5 +167,6 @@ Desktop.ini
 # Misc
 .coze-logs
 .codegraph/
+.superpowers/
 
 next-env.d.ts
