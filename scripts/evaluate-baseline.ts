@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { baselineDraftSchema, type SourcesModule } from "@/features/analysis/domain/contracts";
 import { TavilySearchClient } from "@/server/adapters/search/tavily-search-client";
 import { analyzeArgument, createArgumentExpert } from "@/server/agents/argument/agent";
@@ -14,7 +14,7 @@ import {
   reviseDraft,
   synthesize,
 } from "@/server/agents/synthesis/agent";
-import { loadServerEnv } from "@/server/config/env";
+import { loadServerEnv, reasoningEffortForAgent } from "@/server/config/env";
 import {
   createPiSession,
   createProjectPiModelRuntime,
@@ -104,7 +104,12 @@ function createRealExpertSuite(): ExpertSuite {
   });
   const createExpertSession: ExpertSessionFactory = async (input) => {
     const { model, modelRuntime } = await piRuntime;
-    return createPiSession({ ...input, model, modelRuntime });
+    return createPiSession({
+      ...input,
+      model,
+      modelRuntime,
+      reasoningEffort: reasoningEffortForAgent(env, basename(input.resourceDir)),
+    });
   };
   const argumentExpert = createArgumentExpert(createExpertSession);
   const perspectivesExpert = createPerspectivesExpert(createExpertSession);

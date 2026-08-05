@@ -1,4 +1,5 @@
 import { AuthService } from "@/features/auth/server/auth-service";
+import { basename } from "node:path";
 import { Argon2PasswordHasher } from "@/features/auth/server/password";
 import { PostgresAuthRepository } from "@/features/auth/server/postgres-auth-repository";
 import type { AnalysisDispatcher } from "@/features/analysis/server/analysis-dispatcher";
@@ -31,7 +32,7 @@ import {
 } from "@/server/agents/shared/pi-session";
 import type { ExpertSessionFactory } from "@/server/agents/shared/expert-harness";
 import { WorkspaceToolExecutor } from "@/server/agents/workspace-tool-executor";
-import { loadServerEnv } from "./config/env";
+import { loadServerEnv, reasoningEffortForAgent } from "./config/env";
 import { createDb, type AppDb } from "./db/client";
 import { recordProductEvent } from "./observability/product-events";
 import {
@@ -71,7 +72,12 @@ export function getContainer(): ApplicationContainer {
     const piRuntime = createProjectPiModelRuntime(llmConfig);
     const createExpertSession: ExpertSessionFactory = async (input) => {
       const { model, modelRuntime } = await piRuntime;
-      return createPiSession({ ...input, model, modelRuntime });
+      return createPiSession({
+        ...input,
+        model,
+        modelRuntime,
+        reasoningEffort: reasoningEffortForAgent(env, basename(input.resourceDir)),
+      });
     };
     const argumentExpert = createArgumentExpert(createExpertSession);
     const perspectivesExpert = createPerspectivesExpert(createExpertSession);

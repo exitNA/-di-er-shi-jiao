@@ -61,6 +61,9 @@ ANALYSIS_RUNTIME=in-process
 LLM_BASE_URL=https://<provider-host>/v1
 LLM_API_KEY=<secret>
 LLM_MODEL_ID=<model-id>
+LLM_REASONING_EFFORT=off
+# 支持值：off、low、high、max。
+# 可选：按 Agent 覆盖，例如 LLM_REASONING_EFFORT_SOURCES=high。
 # 可选：启用外部在线搜索。
 TAVILY_API_KEY=<secret>
 ```
@@ -86,6 +89,9 @@ pnpm dev
 LLM_BASE_URL=https://<provider-host>/v1
 LLM_API_KEY=<secret>
 LLM_MODEL_ID=<model-id>
+LLM_REASONING_EFFORT=off
+# 支持值：off、low、high、max。
+# 可选：LLM_REASONING_EFFORT_MANAGER、_ARGUMENT、_PERSPECTIVES、_SOURCES、_RISKS、_SYNTHESIS。
 LLM_INPUT_USD_PER_MILLION=<non-negative-number>
 LLM_OUTPUT_USD_PER_MILLION=<non-negative-number>
 ```

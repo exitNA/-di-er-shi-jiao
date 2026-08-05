@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { loadServerEnv } from "../src/server/config/env";
+import { loadServerEnv, reasoningEffortForAgent } from "../src/server/config/env";
 import {
   createPiSession,
   createProjectPiModelRuntime,
@@ -40,6 +40,7 @@ export async function runLlmProbe() {
     modelRuntime,
     customTools: [complete],
     resourceDir: resolve(process.cwd(), "src/server/agents/manager"),
+    reasoningEffort: reasoningEffortForAgent(env, "manager"),
     systemPrompt: "调用 complete_probe 提交 chinese=通过 和非空 evidence。",
   });
   const startedAt = performance.now();

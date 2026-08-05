@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+const reasoningEffort = z.enum(["off", "low", "high", "max"]);
+const agentReasoningEffortKeys = {
+  manager: "LLM_REASONING_EFFORT_MANAGER",
+  argument: "LLM_REASONING_EFFORT_ARGUMENT",
+  perspectives: "LLM_REASONING_EFFORT_PERSPECTIVES",
+  sources: "LLM_REASONING_EFFORT_SOURCES",
+  risks: "LLM_REASONING_EFFORT_RISKS",
+  synthesis: "LLM_REASONING_EFFORT_SYNTHESIS",
+} as const;
+
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -10,6 +20,13 @@ const schema = z
     LLM_BASE_URL: z.string().url(),
     LLM_API_KEY: z.string().min(1),
     LLM_MODEL_ID: z.string().min(1),
+    LLM_REASONING_EFFORT: reasoningEffort.default("off"),
+    LLM_REASONING_EFFORT_MANAGER: reasoningEffort.optional(),
+    LLM_REASONING_EFFORT_ARGUMENT: reasoningEffort.optional(),
+    LLM_REASONING_EFFORT_PERSPECTIVES: reasoningEffort.optional(),
+    LLM_REASONING_EFFORT_SOURCES: reasoningEffort.optional(),
+    LLM_REASONING_EFFORT_RISKS: reasoningEffort.optional(),
+    LLM_REASONING_EFFORT_SYNTHESIS: reasoningEffort.optional(),
     TAVILY_API_KEY: z.preprocess(
       (value) => typeof value === "string" && value.trim() === "" ? undefined : value,
       z.string().min(1).optional(),
@@ -41,4 +58,9 @@ export type ServerEnv = z.infer<typeof schema>;
 
 export function loadServerEnv(source: NodeJS.ProcessEnv = process.env): ServerEnv {
   return schema.parse(source);
+}
+
+export function reasoningEffortForAgent(env: ServerEnv, agentId: string): ServerEnv["LLM_REASONING_EFFORT"] {
+  const key = agentReasoningEffortKeys[agentId as keyof typeof agentReasoningEffortKeys];
+  return (key ? env[key] : undefined) ?? env.LLM_REASONING_EFFORT;
 }

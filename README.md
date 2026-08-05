@@ -19,7 +19,10 @@ pnpm dev
 
 把 `openssl` 输出写入 `.env` 的 `AUTH_SECRET`，然后访问
 <http://localhost:5000/register>。运行需要真实模型和 `DATABASE_URL`：
-配置 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；
+配置 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL_ID`；支持推理的模型可选配
+`LLM_REASONING_EFFORT`（`low`、`high` 或 `max`）。
+可通过 `LLM_REASONING_EFFORT_MANAGER`、`_ARGUMENT`、`_PERSPECTIVES`、`_SOURCES`、`_RISKS`、`_SYNTHESIS`
+为各 Agent 覆盖默认值。
 配置 `TAVILY_API_KEY` 后启用在线搜索。后台可使用 `in-process` 或 Trigger.dev。
 
 ## 本地 Langfuse

@@ -6,7 +6,7 @@ import { defineTool, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 
-import { createPiSession } from "./pi-session";
+import { createPiSession, createProjectPiModelRuntime } from "./pi-session";
 
 const testTool = defineTool({
   name: "test_tool",
@@ -19,6 +19,25 @@ const testTool = defineTool({
 });
 
 describe("createPiSession", () => {
+  it("maps the supported max reasoning effort", async () => {
+    const { model } = await createProjectPiModelRuntime({
+      apiKey: "test-key",
+      baseURL: "https://llm.example/v1",
+      modelId: "test-model",
+      inputUsdPerMillion: 0,
+      outputUsdPerMillion: 0,
+    });
+
+    expect(model.thinkingLevelMap).toMatchObject({
+      minimal: null,
+      low: "low",
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: "max",
+    });
+  });
+
   it("isolates the session from agent resource files", async () => {
     const resourceDir = await mkdtemp(path.join(tmpdir(), "pi-session-"));
 
@@ -75,6 +94,7 @@ describe("createPiSession", () => {
         modelRuntime,
         model,
         resourceDir,
+        reasoningEffort: "off",
       });
 
       await session.prompt("hello");

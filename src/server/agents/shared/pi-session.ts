@@ -19,12 +19,15 @@ import {
   type ObservationHandle,
 } from "@/server/observability/observations";
 
+type PiThinkingLevel = NonNullable<Parameters<typeof createAgentSession>[0]>["thinkingLevel"];
+
 export interface PiSessionInput {
   systemPrompt: string;
   customTools: ToolDefinition[];
   modelRuntime: ModelRuntime;
   model: NonNullable<ReturnType<ModelRuntime["getModel"]>>;
   resourceDir: string;
+  reasoningEffort: PiThinkingLevel;
 }
 
 export type PiModelRuntimeInput = {
@@ -61,7 +64,15 @@ export async function createProjectPiModelRuntime(input: PiModelRuntimeInput) {
     models: [{
       id: input.modelId,
       name: input.modelId,
-      reasoning: false,
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: "low",
+        high: "high",
+        xhigh: "high",
+        max: "max",
+      },
       input: ["text"],
       cost: {
         input: input.inputUsdPerMillion,
@@ -193,6 +204,7 @@ export async function createPiSession(input: PiSessionInput): Promise<AgentSessi
     settingsManager,
     modelRuntime: input.modelRuntime,
     model: input.model,
+    thinkingLevel: input.reasoningEffort,
   });
 
   const prompt = session.prompt.bind(session);

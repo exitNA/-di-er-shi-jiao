@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadServerEnv } from "@/server/config/env";
+import { loadServerEnv, reasoningEffortForAgent } from "@/server/config/env";
 
 const baseEnv = {
   NODE_ENV: "production",
@@ -33,6 +33,37 @@ describe("loadServerEnv", () => {
       ...realAgentEnv,
       ...langfuseEnv,
     }).LLM_MODEL_ID).toBe("test-model");
+  });
+
+  it("accepts the configured LLM reasoning effort", () => {
+    expect(loadServerEnv({
+      ...baseEnv,
+      ...realAgentEnv,
+      ...langfuseEnv,
+      LLM_REASONING_EFFORT: "high",
+    }).LLM_REASONING_EFFORT).toBe("high");
+  });
+
+  it("lets an Agent override the default reasoning effort", () => {
+    const env = loadServerEnv({
+      ...baseEnv,
+      ...realAgentEnv,
+      ...langfuseEnv,
+      LLM_REASONING_EFFORT: "low",
+      LLM_REASONING_EFFORT_MANAGER: "high",
+    });
+
+    expect(reasoningEffortForAgent(env, "manager")).toBe("high");
+    expect(reasoningEffortForAgent(env, "sources")).toBe("low");
+  });
+
+  it("accepts max when the provider supports it", () => {
+    expect(loadServerEnv({
+      ...baseEnv,
+      ...realAgentEnv,
+      ...langfuseEnv,
+      LLM_REASONING_EFFORT_SYNTHESIS: "max",
+    }).LLM_REASONING_EFFORT_SYNTHESIS).toBe("max");
   });
 
   it("allows the real Agent configuration without online search", () => {
