@@ -78,7 +78,7 @@ pnpm dev
 
 ### 自动测试与真实 LLM 评估
 
-自动测试在测试级预定义桩中验证流程，不依赖确定性 Agent 模式。真实 LLM 输出具有动态性，使用固定样本按[基线报告评测规则](../evaluation/baseline-rubric.md)人工评估。
+自动测试在测试级预定义桩中验证流程，不依赖确定性 Agent 模式。
 
 ## 4. 真实前台 Agent 与 Tavily
 
@@ -105,14 +105,6 @@ set -a
 . ./.env
 set +a
 ```
-
-先验证模型具备工具调用、结构化输出、流式响应和简体中文输出能力：
-
-```bash
-pnpm probe:llm
-```
-
-命令退出码必须为 `0`，输出中的 `structuredOutput`、`toolCall`、`streamedEvents` 必须都为 `true`。探测失败时不要切换生产流量。
 
 ## 5. Trigger.dev Cloud
 
@@ -234,43 +226,7 @@ LANGFUSE_TRACING_ENVIRONMENT=local
 
 告警至少覆盖：任务 `recoverable`、信源降级率、专家成功率、首模块 P95、完整报告 P95 和估算 token 成本。
 
-## 9. 30 样本评测与双评审
-
-真实服务环境先运行：
-
-```bash
-pnpm eval:run
-```
-
-产物位于 `tmp/evaluations/baseline-v1/<timestamp>/`。评审人 A、B 独立填写
-`reviewer-a.csv` 和 `reviewer-b.csv`，提交前不得查看对方结果。评分：
-
-```bash
-pnpm eval:score
-```
-
-若输出分歧样本，由第三位评审只裁决分歧项：
-
-```bash
-pnpm eval:score <run-directory> --adjudication path/to/adjudication.csv
-```
-
-全部门槛必须同时通过：
-
-| 指标 | 门槛 |
-| --- | --- |
-| 六模块结构完整率 | `>= 90%` |
-| 引用 URL 有效率 | `>= 95%` |
-| 引用支持率 | `>= 85%` |
-| 高置信风险精确率 | `>= 80%` |
-| 中立性通过率 | `>= 85%` |
-| 报告成功率 | `>= 90%` |
-| 首模块 P95 | `<= 10s` |
-| 完整基线 P95 | `<= 60s` |
-
-逐列定义和填写示例见 [基线报告评测规则](../evaluation/baseline-rubric.md)。
-
-## 10. 配置版本回滚
+## 9. 配置版本回滚
 
 工作空间持久化 `baseline-v1`，每个 Agent run 持久化自己的 `agent-v1` configVersion。不要直接更新数据库中的版本字段。回滚以已验证的 Git release ref 为单位，同时回滚 Web 与 Trigger.dev 任务：
 
@@ -286,14 +242,13 @@ pnpm exec trigger.dev deploy
 用相同 ref 重新部署 Web 应用，保留回滚前数据库备份。完成生产 smoke checks 后再恢复流量。旧任务的
 `configVersion` 是审计证据，不因回滚而改写；需要恢复的旧任务使用其已持久化版本定位对应发布。
 
-## 11. 生产 smoke checks
+## 10. 生产 smoke checks
 
 发布前确认迁移、Web 和任务部署来自同一 release ref，并已备份数据库。随后执行：
 
 ```bash
 export APP_URL=https://<production-host>
 curl --fail --silent --show-error "$APP_URL/login" >/dev/null
-pnpm probe:llm
 ```
 
 使用专用 smoke 账号在浏览器完成：
@@ -306,13 +261,11 @@ pnpm probe:llm
 6. 确认每次运行只有一次 `run-agent` 派发，工作空间快照中的 Agent run 按
    `queued -> running -> completed` 转换；Langfuse 中只有一个对应 analysis trace，且 manager、专家、generation、搜索和报告动作层级完整；日志没有原文或身份凭据。
 
-真实服务 gate 还必须完成 `pnpm eval:run` 和双评审后的 `pnpm eval:score`。
-
-## 12. 密钥轮换
+## 11. 密钥轮换
 
 1. 在 LLM、Trigger.dev，以及已启用时的 Tavily 供应商创建新密钥，旧密钥暂不撤销。
 2. 同时更新 Web 和 Trigger.dev Cloud 环境变量并重新部署。
-3. 运行 `pnpm probe:llm` 和生产 smoke checks。
+3. 运行生产 smoke checks。
 4. 确认新任务成功后撤销旧密钥。
 
 `AUTH_SECRET` 当前用于认证限流键的 HMAC；轮换会切换限流键空间，但不会主动撤销数据库中的认证会话。若事件要求所有用户重新登录，在部署新 secret 后显式撤销活动认证会话：

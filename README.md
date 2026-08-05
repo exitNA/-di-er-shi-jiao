@@ -46,6 +46,5 @@ pnpm test:db:down
 
 这两个命令不读取 `.env`。
 
-完整的数据库、真实模型、Tavily、Trigger.dev、恢复、监控、评测、回滚和发布步骤见
-[MVP 基线运维手册](docs/operations/mvp-baseline.md)。质量人工评审口径见
-[基线报告评测规则](docs/evaluation/baseline-rubric.md)。
+完整的数据库、真实模型、Tavily、Trigger.dev、恢复、监控、回滚和发布步骤见
+[MVP 基线运维手册](docs/operations/mvp-baseline.md)。
