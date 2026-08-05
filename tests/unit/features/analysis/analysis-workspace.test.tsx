@@ -56,7 +56,7 @@ it("enables the composer when findings are available", async () => {
   );
 });
 
-it("prevents new questions until an interrupted baseline run is resumed", () => {
+it("keeps task controls in the bottom composer until an interrupted baseline run is resumed", () => {
   const current = completedRiskSnapshot();
   const { rerender } = render(
     <AnalysisWorkspace
@@ -65,7 +65,7 @@ it("prevents new questions until an interrupted baseline run is resumed", () => 
   );
 
   const composer = screen.getByRole("textbox", { name: "继续追问" });
-  expect(composer).toBeDisabled();
+  expect(composer).toBeEnabled();
   expect(screen.getByText("正在处理此工作空间")).toBeVisible();
 
   rerender(
@@ -74,7 +74,7 @@ it("prevents new questions until an interrupted baseline run is resumed", () => 
     />,
   );
 
-  expect(composer).toBeDisabled();
+  expect(composer).toBeEnabled();
   expect(screen.getByRole("button", { name: "继续分析" })).toBeEnabled();
 });
 

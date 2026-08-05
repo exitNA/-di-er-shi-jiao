@@ -184,7 +184,10 @@ it("retries a persisted recoverable challenge with its durable key", async () =>
   });
 });
 
-it("keeps challenge input disabled while an interrupted run awaits resume", () => {
+it("places the interrupted-run continuation control beside the input", async () => {
+  const onSnapshot = vi.fn<(snapshot: AnalysisSnapshot) => void>();
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(analysisSnapshot()));
+  vi.stubGlobal("fetch", fetchMock);
   render(
     <ConversationPanel
       jobId="job-1"
@@ -200,11 +203,53 @@ it("keeps challenge input disabled while an interrupted run awaits resume", () =
         completedAt: nowIso,
       }}
       selectedTarget={target}
+      onSnapshot={onSnapshot}
       onRefresh={vi.fn().mockResolvedValue(undefined)}
     />,
   );
 
-  expect(screen.getByRole("textbox", { name: "继续追问" })).toBeDisabled();
+  expect(screen.getByRole("textbox", { name: "继续追问" })).toBeEnabled();
+  await userEvent.click(screen.getByRole("button", { name: "继续分析" }));
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/analyses/job-1/runs/22222222-2222-4222-8222-222222222222/resume",
+    expect.objectContaining({ method: "POST" }),
+  );
+  await waitFor(() => expect(onSnapshot).toHaveBeenCalledOnce());
+});
+
+it("turns the submit control into an interrupt control while a run is active", async () => {
+  const onSnapshot = vi.fn<(snapshot: AnalysisSnapshot) => void>();
+  const fetchMock = vi.fn().mockResolvedValue(Response.json(analysisSnapshot()));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <ConversationPanel
+      jobId="job-1"
+      messages={[]}
+      activeRun={{
+        id: "22222222-2222-4222-8222-222222222222",
+        workspaceId: "job-1",
+        kind: "baseline",
+        status: "running",
+        configVersion: "agent-v1",
+        cancellationRequestedAt: null,
+        startedAt: nowIso,
+        completedAt: null,
+      }}
+      selectedTarget={target}
+      onSnapshot={onSnapshot}
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+
+  expect(screen.getByRole("textbox", { name: "继续追问" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "发送追问" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "终止任务" }));
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    "/api/analyses/job-1/runs/22222222-2222-4222-8222-222222222222/cancel",
+    expect.objectContaining({ method: "POST" }),
+  );
+  await waitFor(() => expect(onSnapshot).toHaveBeenCalledOnce());
 });
 
 it("renders persisted messages and a revision with a focusable report link", () => {
@@ -272,6 +317,21 @@ it("renders persisted messages and a revision with a focusable report link", () 
   ).toHaveAttribute("href", "#report-item-risks-items-risk-1");
   expect(screen.getByText("修订理由：原解释超出了原文证据。")).toBeInTheDocument();
   expect(screen.getByText("新增证据：source-new")).toBeInTheDocument();
+});
+
+it("formats Agent output as Markdown", () => {
+  render(
+    <ConversationPanel
+      jobId="job-1"
+      messages={[]}
+      agentOutput={"## 执行状态\n\n**已完成**\n\n| 能力 | 状态 |\n| --- | --- |\n| 论证 | ✅ 完成 |"}
+      onRefresh={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+
+  expect(screen.getByRole("heading", { name: "执行状态" })).toBeVisible();
+  expect(screen.getByText("已完成").tagName).toBe("STRONG");
+  expect(screen.getByRole("table")).toBeVisible();
 });
 
 it("focuses the stable module anchor when a revised item no longer exists", async () => {

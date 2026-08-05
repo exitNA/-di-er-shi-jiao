@@ -1,5 +1,4 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, it } from "vitest";
 
 import { AgentProcessTimeline } from "@/features/analysis/components/agent-process-timeline";
@@ -10,7 +9,6 @@ it("renders nested Agent activity with real reasoning and redacted tool details"
 
   expect(screen.getByRole("region", { name: "Agent 过程" })).toBeVisible();
   expect(screen.getByText("客户经理")).toBeVisible();
-  await userEvent.click(screen.getByText("客户经理"));
   expect(screen.getByText("比较两组证据后再下结论。")).toBeVisible();
   expect(screen.getByText((_, element) => element?.textContent === '输入：{"query":"原始材料"}\n输出：找到两条来源')).toBeVisible();
   expect(screen.getByText("模型输出")).toBeVisible();

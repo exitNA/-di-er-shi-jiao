@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
-import { createExpertHarness, type ExpertSessionInput } from "./expert-harness";
+import { createExpertHarness, type ExpertSessionInput } from "@/server/agents/shared/expert-harness";
 
 const invalidSession = {
   prompt: vi.fn(),

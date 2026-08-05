@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createSourceSearchTool } from "./search";
+import { createSourceSearchTool } from "@/server/agents/sources/tools/search";
 
 describe("createSourceSearchTool", () => {
   it("uses the server-owned material to form source queries", async () => {

@@ -21,6 +21,9 @@ import {
 
 type PiThinkingLevel = NonNullable<Parameters<typeof createAgentSession>[0]>["thinkingLevel"];
 
+// manager：客户经理；argument：论证分析；sources：信源研究。
+// perspectives：多视角挑战；risks：风险审查；synthesis：综合审校。
+
 export interface PiSessionInput {
   systemPrompt: string;
   customTools: ToolDefinition[];
@@ -92,6 +95,7 @@ export async function createProjectPiModelRuntime(input: PiModelRuntimeInput) {
 
 export async function createPiSession(input: PiSessionInput): Promise<AgentSession> {
   const settingsManager = SettingsManager.inMemory();
+  const agentId = path.basename(input.resourceDir);
   let generation: ObservationHandle | undefined;
   let generationContext: Context | undefined;
   let turnIndex = 0;
@@ -124,11 +128,11 @@ export async function createPiSession(input: PiSessionInput): Promise<AgentSessi
           }
           turnIndex = event.turnIndex;
           generation = startObservation({
-            name: "pi.generation",
+            name: agentId,
             asType: "generation",
             input: { systemPrompt: input.systemPrompt },
             metadata: {
-              agentId: path.basename(input.resourceDir),
+              agentId,
               modelId: input.model.id,
               turnIndex: String(turnIndex),
             },

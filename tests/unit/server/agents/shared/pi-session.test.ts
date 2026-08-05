@@ -6,7 +6,7 @@ import { defineTool, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 
-import { createPiSession, createProjectPiModelRuntime } from "./pi-session";
+import { createPiSession, createProjectPiModelRuntime } from "@/server/agents/shared/pi-session";
 
 const testTool = defineTool({
   name: "test_tool",
@@ -31,9 +31,9 @@ describe("createPiSession", () => {
     expect(model.thinkingLevelMap).toMatchObject({
       minimal: null,
       low: "low",
-      medium: null,
+      medium: "low",
       high: "high",
-      xhigh: null,
+      xhigh: "high",
       max: "max",
     });
   });

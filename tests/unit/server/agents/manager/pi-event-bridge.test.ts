@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { bridgePiEvent } from "./pi-event-bridge";
+import { bridgePiEvent } from "@/server/agents/manager/pi-event-bridge";
 
 describe("bridgePiEvent", () => {
   it("publishes a redacted AG-UI tool result", async () => {

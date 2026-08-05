@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDelegateExpertTool } from "./delegate-expert";
+import { createDelegateExpertTool } from "@/server/agents/manager/tools/delegate-expert";
 
 describe("createDelegateExpertTool", () => {
   it("delegates to a selected peer without exposing workspace identifiers", async () => {
